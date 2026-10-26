@@ -1,0 +1,2023 @@
+/* =====================================================================
+   indbot dashboard — terminal design system
+   ---------------------------------------------------------------------
+   Dark is the default surface. Light is SELECTED from the same ramps, not
+   flipped: it is redefined under @media (prefers-color-scheme: light)
+   guarded by :root:not([data-theme="dark"]), and again under
+   :root[data-theme="light"].
+
+   The colour constraint that shapes this file: profit-green and loss-red
+   measure Delta E 4.0 apart for a deuteranope. They are therefore the THIRD
+   channel. Direction is carried first by an explicit sign (+/−), second by a
+   glyph (▲/▼) with a text label, and only then by hue. Nothing in here may
+   make colour the only channel.
+
+   Sections
+     01 tokens
+     02 base, typography, a11y primitives
+     03 mode rail and the page edge
+     04 header, controls, buttons
+     05 ticker tape
+     06 banners
+     07 tabs
+     08 layout, panels, headings, empty states
+     09 hero figure
+     10 stat tiles and sparklines
+     11 direction glyphs and status badges
+     12 underlying cards and signals
+     13 positions
+     14 why no trade
+     15 dense tables
+     16 forms, settings, help text, chips
+     17 charts
+     18 backtest
+     19 log
+     20 first-run setup card
+     21 dialogs and bottom sheets
+     22 disconnected / stale treatment
+     23 responsive
+     24 prefers-reduced-motion
+     25 forced-colors
+     26 print
+   ===================================================================== */
+
+
+/* -------------------------------------------------------------- 01 tokens
+   Status hexes are fixed and never themed. --warning sits outside the dark
+   lightness band by design: it is used as INK or a hairline accent, never as
+   a large fill. */
+
+:root {
+  color-scheme: dark;
+
+  /* Cooled and deepened from the reference greys: a trading desk is read for
+     hours in a dim room, and a warm paper-grey panel glows at that length.
+     Hue held at ~225 so the blue series reads as the only chromatic thing
+     on screen besides P&L. */
+  --page:        #070a0e;
+  --surface:     #0f141a;
+  --surface-2:   #161d25;
+  --surface-3:   #1e2731;
+  --ink:         #e8eef5;
+  --ink-2:       #a8b6c5;
+  --muted:       #6d7d8f;
+  --grid:        #1b242e;
+  --axis:        #2a3744;
+  --border:      rgba(150, 180, 210, 0.14);
+  --border-2:    rgba(150, 180, 210, 0.26);
+  --shadow:      0 10px 30px rgba(0, 0, 0, 0.6);
+  --accent:      #3987e5;
+  --accent-dim:  rgba(57, 135, 229, 0.16);
+
+  --series-1:      #3987e5;
+  --series-1-fill: rgba(57, 135, 229, 0.18);
+
+  /* fixed status palette — never themed */
+  --good:        #0ca30c;
+  --warning:     #fab219;
+  --serious:     #ec835a;
+  --critical:    #d03b3b;
+
+  /* the readable ink forms of the same states, per surface */
+  --good-ink:    #0ca30c;
+  --critical-ink:#e66767;
+  --warning-ink: #fab219;
+  --serious-ink: #ec835a;
+
+  /* low-alpha washes. The geometry carries the sign; these only reinforce. */
+  --good-wash:     rgba(12, 163, 12, 0.14);
+  --critical-wash: rgba(208, 59, 59, 0.14);
+  --warning-wash:  rgba(250, 178, 25, 0.12);
+
+  --focus:       #3987e5;
+
+  --gutter: 16px;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --rail-h: 26px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Light is OPT-IN only, via the theme toggle — deliberately not wired to
+   prefers-color-scheme. A desk that flips to a white screen because the OS
+   decided it is daytime is the wrong behaviour for something you watch with a
+   position open. The selector below is kept scoped so the rules stay available
+   to [data-theme="light"] below without the OS ever triggering them. */
+@media (prefers-color-scheme: light) {
+  :root:where([data-theme="light-auto"]) {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface:     #fcfcfb;
+    --surface-2:   #f2f1ed;
+    --surface-3:   #e8e7e1;
+    --ink:         #0b0b0b;
+    --ink-2:       #52514e;
+    --muted:       #6f6e69;
+    --grid:        #e1e0d9;
+    --axis:        #c3c2b7;
+    --border:      rgba(11, 11, 11, 0.10);
+    --border-2:    rgba(11, 11, 11, 0.20);
+    --shadow:      0 10px 30px rgba(11, 11, 11, 0.14);
+    --series-1:      #2a78d6;
+    --series-1-fill: rgba(42, 120, 214, 0.16);
+    --good-ink:    #006300;
+    --critical-ink:#b22b2b;
+    --warning-ink: #8a5b00;
+    --serious-ink: #9c4a23;
+    --good-wash:     rgba(12, 163, 12, 0.12);
+    --critical-wash: rgba(208, 59, 59, 0.12);
+    --warning-wash:  rgba(250, 178, 25, 0.18);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page:        #f9f9f7;
+  --surface:     #fcfcfb;
+  --surface-2:   #f2f1ed;
+  --surface-3:   #e8e7e1;
+  --ink:         #0b0b0b;
+  --ink-2:       #52514e;
+  --muted:       #6f6e69;
+  --grid:        #e1e0d9;
+  --axis:        #c3c2b7;
+  --border:      rgba(11, 11, 11, 0.10);
+  --border-2:    rgba(11, 11, 11, 0.20);
+  --shadow:      0 10px 30px rgba(11, 11, 11, 0.14);
+  --series-1:      #2a78d6;
+  --series-1-fill: rgba(42, 120, 214, 0.16);
+  --good-ink:    #006300;
+  --critical-ink:#b22b2b;
+  --warning-ink: #8a5b00;
+  --serious-ink: #9c4a23;
+  --good-wash:     rgba(12, 163, 12, 0.12);
+  --critical-wash: rgba(208, 59, 59, 0.12);
+  --warning-wash:  rgba(250, 178, 25, 0.18);
+}
+
+
+/* ------------------------------------- 02 base, typography, a11y primitives */
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+p { margin: 0; }
+
+/* Monospace for prices, quantities and the clock. Prose stays in the sans. */
+code, .mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.skiplink {
+  position: absolute; left: var(--gutter); top: 4px; z-index: 100;
+  transform: translateY(-200%);
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 8px 12px; font-size: 13px; font-weight: 650; text-decoration: none;
+}
+.skiplink:focus-visible { transform: translateY(0); }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+[hidden] { display: none !important; }
+
+
+/* --------------------------------------- 03 mode rail and the page edge
+   A persistent rail across the top plus a border on the page itself. PAPER and
+   LIVE must not look alike from across a room: different hue, different
+   weight, different word, and LIVE-armed adds a solid fill. */
+
+.moderail {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  min-height: var(--rail-h);
+  padding: 3px var(--gutter);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.moderail-led {
+  width: 9px; height: 9px; border-radius: 2px; flex: none;
+  background: var(--muted);
+}
+.moderail-mode {
+  font-weight: 800; letter-spacing: 0.12em; font-size: 12px;
+  font-family: var(--sans);
+}
+.moderail-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.moderail-armed {
+  margin-left: auto; flex: none;
+  font-weight: 800; letter-spacing: 0.12em; font-size: 11px;
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--critical); color: #fff;
+}
+
+body[data-mode="backtest"] .moderail { background: var(--surface-3); }
+body[data-mode="backtest"] .moderail-led { background: var(--axis); }
+body[data-mode="backtest"] .moderail-mode { color: var(--ink); }
+
+body[data-mode="paper"] .moderail {
+  background: color-mix(in srgb, var(--series-1) 18%, var(--surface));
+  border-bottom-color: var(--series-1);
+}
+body[data-mode="paper"] .moderail-led { background: var(--series-1); }
+body[data-mode="paper"] .moderail-mode { color: var(--series-1); }
+
+body[data-mode="live"] .moderail {
+  background: color-mix(in srgb, var(--critical) 22%, var(--surface));
+  border-bottom: 2px solid var(--critical);
+}
+body[data-mode="live"] .moderail-led { background: var(--critical); }
+body[data-mode="live"] .moderail-mode { color: var(--critical-ink); }
+body[data-mode="live"] .moderail-text { color: var(--ink); }
+
+body[data-mode="live"][data-armed="true"] .moderail {
+  background: var(--critical); color: #fff;
+}
+body[data-mode="live"][data-armed="true"] .moderail-mode,
+body[data-mode="live"][data-armed="true"] .moderail-text { color: #fff; }
+body[data-mode="live"][data-armed="true"] .moderail-led { background: #fff; }
+body[data-mode="live"][data-armed="true"] .moderail-armed {
+  background: #fff; color: var(--critical);
+}
+
+/* The page edge. You cannot scroll past it. */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 90; pointer-events: none;
+  border: 2px solid transparent;
+}
+body[data-mode="backtest"]::after { border-color: var(--axis); }
+body[data-mode="paper"]::after    { border-color: var(--series-1); }
+body[data-mode="live"]::after     { border-color: var(--critical); border-width: 3px; }
+body[data-mode="live"][data-armed="true"]::after {
+  border-width: 4px;
+  animation: liveedge 2.4s ease-in-out infinite;
+}
+@keyframes liveedge {
+  0%, 100% { border-color: var(--critical); }
+  50%      { border-color: color-mix(in srgb, var(--critical) 55%, var(--page)); }
+}
+
+
+/* ------------------------------------------- 04 header, controls, buttons */
+
+.topbar {
+  position: sticky; top: var(--rail-h); z-index: 50;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px var(--gutter);
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.topbar-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.topbar-spacer { flex: 1 1 auto; }
+
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand-mark { width: 10px; height: 10px; border-radius: 2px; background: var(--series-1); }
+.brand-name { font-weight: 700; letter-spacing: 0.02em; }
+
+/* Mode badge: paper, backtest, live-disarmed and live-armed must not be
+   confusable at a glance — different hue AND different weight AND a word. */
+.mode-badge {
+  margin: 0; display: inline-flex; align-items: baseline; gap: 8px;
+  padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.mode-badge-mode { font-weight: 800; letter-spacing: 0.08em; font-size: 13px; }
+.mode-badge-arm { color: var(--ink-2); letter-spacing: 0.02em; }
+
+body[data-mode="paper"] .mode-badge { border-color: var(--series-1); }
+body[data-mode="paper"] .mode-badge-mode { color: var(--series-1); }
+body[data-mode="backtest"] .mode-badge { border-color: var(--axis); }
+body[data-mode="backtest"] .mode-badge-mode { color: var(--ink-2); }
+body[data-mode="live"] .mode-badge {
+  border-color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 14%, var(--surface));
+}
+body[data-mode="live"] .mode-badge-mode { color: var(--critical-ink); }
+body[data-mode="live"][data-armed="true"] .mode-badge {
+  border-color: var(--critical); background: var(--critical);
+}
+body[data-mode="live"][data-armed="true"] .mode-badge-mode,
+body[data-mode="live"][data-armed="true"] .mode-badge-arm { color: #fff; }
+
+/* Status LEDs — always paired with a word, never a bare dot. */
+.led, .conn-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block;
+  background: var(--muted);
+}
+.led--up   { background: var(--good); }
+.led--warn { background: var(--warning); }
+.led--down { background: var(--critical); }
+.led--off  { background: var(--muted); }
+
+.conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+body[data-conn="up"]         .conn-dot { background: var(--good); }
+body[data-conn="connecting"] .conn-dot { background: var(--warning); }
+body[data-conn="down"]       .conn-dot { background: var(--critical); }
+body[data-conn="down"]       .conn-text { color: var(--critical-ink); font-weight: 700; }
+
+.clock { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.clock-time {
+  font-family: var(--mono); font-size: 14px; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.clock-zone, .clock-session { color: var(--muted); }
+
+.modeswitch {
+  display: inline-flex; border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.mode-btn {
+  appearance: none; border: 0; background: transparent; color: var(--ink-2);
+  font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 7px 10px; cursor: pointer; min-height: 36px;
+}
+.mode-btn + .mode-btn { border-left: 1px solid var(--border); }
+.mode-btn:hover { background: var(--surface-2); color: var(--ink); }
+.mode-btn[aria-pressed="true"] { background: var(--series-1); color: #fff; }
+.mode-btn--live[aria-pressed="true"] { background: var(--critical); color: #fff; }
+
+.btn {
+  appearance: none; font: inherit; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.04em; padding: 8px 12px; min-height: 36px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid var(--border-2); background: var(--surface-2); color: var(--ink);
+}
+.btn:hover { background: var(--surface-3); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn-glyph { font-size: 10px; line-height: 1; }
+.btn--primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+.btn--primary:hover { filter: brightness(1.08); background: var(--series-1); }
+.btn--ghost { background: transparent; color: var(--ink-2); }
+.btn--arm { border-color: var(--warning); color: var(--warning-ink); }
+.btn--disarm { border-color: var(--axis); }
+.btn--danger { background: var(--critical); border-color: var(--critical); color: #fff; }
+.btn--panic {
+  background: var(--critical); border-color: var(--critical); color: #fff;
+  font-weight: 800; letter-spacing: 0.1em; flex: none;
+}
+.btn--panic:hover { background: var(--critical); filter: brightness(1.12); }
+.btn--theme { min-width: 58px; }
+.btn--run[data-running="true"] { border-color: var(--good); color: var(--good-ink); }
+.btn--sm { min-height: 30px; padding: 4px 9px; font-size: 11.5px; }
+
+
+/* ----------------------------------------------------------- 05 ticker tape
+   The at-a-glance market state. Spot, signed change, a ▲/▼ glyph with an
+   aria-label word, and the regime. Scrolls horizontally on a phone. */
+
+.ticker {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+  background: var(--page);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.ticker-track {
+  list-style: none; margin: 0; padding: 6px var(--gutter);
+  display: flex; align-items: stretch; gap: 0;
+  min-width: max-content;
+}
+.tick {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 2px 14px;
+  border-right: 1px solid var(--grid);
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.tick:first-child { padding-left: 0; }
+.tick--placeholder { color: var(--muted); border-right: 0; font-style: normal; }
+.tick-name {
+  font-weight: 700; letter-spacing: 0.06em; font-size: 11.5px; color: var(--ink);
+}
+.tick-spot {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 13.5px; color: var(--ink);
+}
+.tick-change {
+  font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px;
+  display: inline-flex; align-items: baseline; gap: 3px;
+}
+.tick-regime {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.tick-note { font-size: 11px; color: var(--muted); }
+
+/* A tick change flashes briefly. Guarded for reduced motion below. */
+.tick--flash { animation: tickflash 700ms ease-out; }
+.tick--flash.dir-up   { animation-name: tickflash-up; }
+.tick--flash.dir-down { animation-name: tickflash-down; }
+@keyframes tickflash      { from { background: var(--surface-3); } to { background: transparent; } }
+@keyframes tickflash-up   { from { background: var(--good-wash); } to { background: transparent; } }
+@keyframes tickflash-down { from { background: var(--critical-wash); } to { background: transparent; } }
+
+
+/* ---------------------------------------------------------------- 06 banners */
+
+.banner {
+  padding: 9px var(--gutter);
+  font-size: 13px; font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.banner--stale { background: var(--critical-wash); color: var(--ink); border-bottom-color: var(--critical); }
+.banner--halt  { background: var(--warning-wash);  color: var(--ink); border-bottom-color: var(--warning); }
+.banner--error { background: var(--surface-2); color: var(--critical-ink); }
+.banner b { font-variant-numeric: tabular-nums; }
+
+
+/* ------------------------------------------------------------------- 07 tabs
+   Real buttons. Keyboard arrow navigation and the selected tab surviving a
+   reload are the script's job; the visual state is aria-selected only, so the
+   two can never disagree. */
+
+.tabsnav {
+  background: var(--page);
+  border-bottom: 1px solid var(--border);
+}
+.tabs {
+  display: flex; gap: 2px;
+  max-width: 1320px; margin: 0 auto;
+  padding: 0 var(--gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  font: inherit; color: var(--ink-2);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0;
+  padding: 9px 14px 7px; min-height: 44px; flex: none;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.tab-name { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.tab-note { font-size: 10.5px; color: var(--muted); letter-spacing: 0.02em; }
+.tab:hover { background: var(--surface-2); color: var(--ink); }
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--surface);
+  border-bottom-color: var(--series-1);
+}
+.tab[aria-selected="true"] .tab-note { color: var(--ink-2); }
+.tab:focus-visible { outline-offset: -2px; }
+
+/* A tab can carry a count or an alert dot the script sets. */
+.tab[data-alert="true"] .tab-name::after {
+  content: "•"; color: var(--critical-ink); margin-left: 5px; font-size: 16px; line-height: 0;
+}
+
+.tabpanel { display: flex; flex-direction: column; gap: var(--gutter); }
+.tabpanel:focus-visible { outline-offset: 4px; }
+
+
+/* -------------------------------- 08 layout, panels, headings, empty states */
+
+main {
+  scroll-margin-top: 90px;
+  max-width: 1320px; margin: 0 auto;
+  padding: var(--gutter) var(--gutter) 64px;
+  display: flex; flex-direction: column; gap: var(--gutter);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.panel--key { border-color: var(--border-2); }
+.panel--strip { padding: 10px 12px; }
+
+.panel-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px;
+}
+.panel-title {
+  font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink);
+}
+.panel-sub { margin: 0; font-size: 12.5px; color: var(--ink-2); flex: 1 1 260px; }
+.panel-note { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.subhead {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-2);
+  margin-top: 4px;
+}
+
+/* The headline sentence pulled out of a block of reasons — the per-trade risk
+   arithmetic, usually, because that is the rule that blocks most often. */
+.headline {
+  margin: 0 0 10px; padding: 9px 11px;
+  border-left: 3px solid var(--warning);
+  background: var(--warning-wash);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 13.5px; color: var(--ink); font-weight: 600;
+}
+.headline--good { border-left-color: var(--good); background: var(--good-wash); }
+.headline--bad  { border-left-color: var(--critical); background: var(--critical-wash); }
+
+/* Every empty state says what it is waiting for, in a sentence. */
+.empty {
+  margin: 0; padding: 14px 12px; border: 1px dashed var(--border-2);
+  border-radius: var(--radius-sm); color: var(--ink-2); font-size: 13px;
+  background: var(--surface-2);
+}
+.empty + .empty { margin-top: 8px; }
+
+
+/* ----------------------------------------------------------- 09 hero figure
+   Exactly ONE hero figure per view: today's realised P&L. Body sans, >=48px,
+   proportional figures — tabular digits look loose at display size. */
+
+.hero {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.hero-main { min-width: 0; flex: 1 1 260px; }
+.hero-label {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); font-weight: 650;
+}
+.hero-value {
+  font-family: var(--sans);
+  font-variant-numeric: proportional-nums;
+  font-size: clamp(48px, 11vw, 64px);
+  font-weight: 650;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.hero-delta {
+  font-family: var(--mono); font-size: 13px; margin-top: 4px;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+}
+.hero-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; max-width: 46ch; }
+.hero-side { flex: 0 1 220px; min-width: 0; }
+.hero-spark { min-height: 36px; }
+.hero-spark:empty { display: none; min-height: 0; }
+.hero-spark svg { display: block; width: 100%; height: auto; }
+.hero-sparklabel { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+
+/* ------------------------------------------- 10 stat tiles and sparklines
+   Tile contract: label (sentence case, no trailing colon) · value · optional
+   signed delta vs a NAMED period · optional 12-point sparkline. */
+
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tiles > .empty,
+.cardgrid > .empty,
+.fields > .empty { grid-column: 1 / -1; }
+.tile {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 10px; min-width: 0;
+}
+.tile-label {
+  display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted);
+}
+/* The tile value is the body sans at semibold with PROPORTIONAL figures:
+   tabular digits look loose at display size. Mono + tabular-nums is for the
+   columns below, where digits have to line up. */
+.tile-value {
+  display: block; font-family: var(--sans);
+  font-variant-numeric: proportional-nums;
+  font-size: 21px; font-weight: 650; line-height: 1.2; margin-top: 2px;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.tile-delta {
+  display: flex; align-items: baseline; gap: 4px;
+  font-family: var(--mono); font-size: 11.5px; margin-top: 1px;
+}
+.tile-sub { display: block; font-size: 11.5px; color: var(--ink-2); margin-top: 1px; }
+.tile-spark { margin-top: 4px; min-height: 18px; }
+.tile-spark svg { display: block; width: 100%; height: auto; }
+.tile--wide { grid-column: 1 / -1; }
+.tile--good { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.tile--bad  { border-color: color-mix(in srgb, var(--critical) 45%, var(--border)); }
+.tile--warn { border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); }
+
+
+/* ----------------------------------- 11 direction glyphs and status badges
+   Colour is the third channel. The sign comes first, the glyph second. */
+
+.pnl-pos  { color: var(--good-ink); }
+.pnl-neg  { color: var(--critical-ink); }
+.pnl-flat { color: var(--ink-2); }
+
+.dir { display: inline-flex; align-items: baseline; gap: 3px; }
+.dir-glyph { font-size: 0.85em; line-height: 1; }
+.dir-up    { color: var(--good-ink); }
+.dir-down  { color: var(--critical-ink); }
+.dir-flat  { color: var(--ink-2); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border-2); background: var(--surface-2); color: var(--ink-2);
+  white-space: nowrap;
+}
+.badge--good     { border-color: var(--good);     color: var(--good-ink); }
+.badge--warning  { border-color: var(--warning);  color: var(--warning-ink); }
+.badge--serious  { border-color: var(--serious);  color: var(--serious-ink); }
+.badge--critical { border-color: var(--critical); background: var(--critical); color: #fff; }
+.badge--neutral  { border-color: var(--axis);     color: var(--ink-2); }
+.badge--series   { border-color: var(--series-1); color: var(--series-1); }
+
+.state-pill {
+  display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border-2); color: var(--ink-2);
+}
+.state-pill--promoted { border-color: var(--good); color: var(--good-ink); }
+.state-pill--demoted  { border-color: var(--serious); color: var(--serious-ink); }
+.state-pill--blocked  { border-color: var(--critical); background: var(--critical); color: #fff; }
+
+
+/* ------------------------------------- 12 underlying cards and signals */
+
+.cardgrid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+
+.ucard {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 10px; min-width: 0;
+}
+.ucard--off { opacity: 0.6; }
+.ucard-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ucard-name { font-weight: 700; letter-spacing: 0.04em; }
+.ucard-label { font-size: 11.5px; color: var(--muted); }
+.ucard-spot {
+  margin-left: auto; font-family: var(--mono); font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.ucard-change {
+  font-family: var(--mono); font-size: 12.5px;
+  display: inline-flex; align-items: baseline; gap: 3px;
+}
+.ucard-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px;
+  font-size: 12px; color: var(--ink-2);
+}
+.meta-item b {
+  font-family: var(--mono); font-weight: 650; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.regime { text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; font-weight: 700; }
+.regime--trend_up { color: var(--good-ink); }
+.regime--trend_down { color: var(--critical-ink); }
+.regime--range { color: var(--ink-2); }
+
+.siglist { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.sig {
+  border: 1px solid var(--border); border-left: 3px solid var(--series-1);
+  border-radius: var(--radius-sm); background: var(--surface); padding: 7px 9px;
+}
+.sig--CE { border-left-color: var(--good); }
+.sig--PE { border-left-color: var(--critical); }
+.sig-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; font-size: 12.5px;
+}
+.sig-setup { font-weight: 700; }
+.sig-side { font-family: var(--mono); font-weight: 700; }
+.sig-side--CE { color: var(--good-ink); }
+.sig-side--PE { color: var(--critical-ink); }
+.sig-score {
+  margin-left: auto; font-family: var(--mono); color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.reasons { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
+.reasons li { margin: 1px 0; }
+
+.datawarn { margin: 6px 0 0; font-size: 12.5px; color: var(--critical-ink); font-weight: 600; }
+
+
+/* --------------------------------------------------------- 13 positions */
+
+.pos {
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 10px; margin-bottom: 10px;
+}
+.pos:last-child { margin-bottom: 0; }
+.pos-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.pos-label { font-weight: 700; font-size: 16px; }
+.pos-tag {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--border-2); border-radius: 999px; padding: 1px 7px; color: var(--ink-2);
+}
+.pos-pnl {
+  margin-left: auto; font-family: var(--mono); font-size: 18px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pos-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px; margin-top: 8px;
+}
+.pos-cell { min-width: 0; }
+.pos-cell span {
+  display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.pos-cell b {
+  font-family: var(--mono); font-weight: 650; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.pos-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* The stop/target ladder. Position against the entry rule carries the sign. */
+.ladder { margin-top: 10px; }
+.ladder-track {
+  position: relative; height: 10px; border-radius: 5px; overflow: hidden;
+  background: linear-gradient(90deg, var(--critical) 0%, var(--surface-3) 50%, var(--good) 100%);
+  border: 1px solid var(--border);
+}
+.ladder-mark {
+  position: absolute; top: -3px; width: 2px; height: 16px; background: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface-2);
+}
+.ladder-legend {
+  display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-2);
+  margin-top: 4px;
+}
+.ladder-legend span { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.faultbox {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-sm);
+  background: var(--critical-wash);
+  border: 1px solid var(--critical); font-size: 12.5px; font-weight: 600;
+}
+
+
+/* ------------------------------------------------------ 14 why no trade */
+
+.why {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 9px 10px; margin-bottom: 8px;
+}
+.why:last-child { margin-bottom: 0; }
+.why--taken { border-left: 3px solid var(--good); }
+.why--rejected { border-left: 3px solid var(--serious); }
+.why--blocked { border-left: 3px solid var(--critical); background: var(--critical-wash); }
+.why-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 10px; font-size: 12.5px;
+}
+.why-time { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.why-what { font-weight: 700; }
+.why-score {
+  margin-left: auto; font-family: var(--mono); color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.why-reason { margin: 6px 0 0; font-size: 13.5px; color: var(--ink); }
+.why--taken .why-reason { color: var(--good-ink); }
+/* The blocking rule's own arithmetic, pulled out as the headline. */
+.why-arith {
+  margin: 6px 0 0; padding: 7px 9px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums;
+  color: var(--ink); overflow-wrap: anywhere;
+}
+.why details { margin-top: 6px; }
+.why summary { font-size: 12px; color: var(--ink-2); cursor: pointer; min-height: 24px; }
+.why summary::-webkit-details-marker { color: var(--muted); }
+
+
+/* ------------------------------------------------------ 15 dense tables
+   Hairline-ruled, solid, one shade off the surface. Never dashed. */
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.table th, .table td {
+  text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap;
+}
+.table thead th {
+  color: var(--muted); font-weight: 650; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  background: var(--surface);
+}
+/* A row header is a DATA LABEL, not a column head: it keeps the data's own
+   case. Uppercasing it would misreport a lowercase bucket key. */
+.table tbody th {
+  background: transparent; color: var(--ink); font-weight: 650; font-size: 12.5px;
+  text-transform: none; letter-spacing: 0;
+}
+.table td:first-child, .table th:first-child { text-align: left; }
+/* Columns of numbers that must align — the one place tabular digits belong. */
+.table td.num, .table th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.table tbody tr:hover { background: var(--surface-2); }
+.table tr.is-off td { color: var(--muted); }
+.table tr.is-blocked { background: var(--critical-wash); }
+.table tr.is-good { background: var(--good-wash); }
+.table caption:not(.sr-only) {
+  caption-side: top; text-align: left; font-size: 11.5px; color: var(--ink-2);
+  padding-bottom: 6px;
+}
+
+.notelist {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.notelist li {
+  font-size: 12.5px; color: var(--ink-2); padding-left: 10px;
+  border-left: 2px solid var(--axis);
+}
+.notelist li.warn { border-left-color: var(--warning); color: var(--ink); }
+.notelist li.bad  { border-left-color: var(--critical); color: var(--ink); }
+.notelist li.ok   { border-left-color: var(--good); color: var(--ink); }
+
+
+/* ---------------------------- 16 forms, settings, help text, chips */
+
+.split { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.split-main, .split-side { min-width: 0; }
+.settings {
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 10px;
+}
+.settings-lead { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.field--wide { grid-column: 1 / -1; }
+.field label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+}
+.field input, .field select,
+.inline-field input, .inline-field select {
+  font: inherit; font-size: 13px; font-family: var(--mono);
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 6px 8px; min-height: 34px; width: 100%; min-width: 0;
+}
+/* Help on every risk setting: one sentence under the input, wired through
+   aria-describedby by the script. */
+.field-hint { font-size: 11px; color: var(--ink-2); line-height: 1.4; }
+.field-hint b { font-family: var(--mono); font-weight: 650; color: var(--ink); }
+.field.is-dirty input,
+.field.is-dirty select { border-color: var(--warning); }
+.field.is-dirty > label::after {
+  content: " unsaved"; color: var(--warning-ink); font-weight: 700; letter-spacing: 0.04em;
+}
+.field.is-bad input, .field.is-bad select { border-color: var(--critical); }
+
+.settings-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.formmsg { margin: 8px 0 0; font-size: 12.5px; min-height: 1.2em; color: var(--ink-2); }
+.formmsg.ok { color: var(--good-ink); }
+.formmsg.bad { color: var(--critical-ink); font-weight: 650; }
+
+.inline-field {
+  display: inline-flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted);
+}
+.inline-field > span { text-transform: uppercase; letter-spacing: 0.05em; }
+
+.filterbar { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.chip {
+  appearance: none; font: inherit; font-size: 11.5px; font-weight: 650;
+  padding: 4px 10px; min-height: 30px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-2); background: transparent; color: var(--ink-2);
+}
+.chip:hover { background: var(--surface-2); }
+.chip--on, .chip[aria-pressed="true"] {
+  background: var(--series-1); border-color: var(--series-1); color: #fff;
+}
+
+.cmd {
+  margin: 10px 0; padding: 10px 12px; overflow-x: auto;
+  background: var(--page); border: 1px solid var(--border-2);
+  border-left: 3px solid var(--series-1);
+  border-radius: var(--radius-sm);
+}
+.cmd code {
+  font-family: var(--mono); font-size: 14px; color: var(--ink);
+  font-variant-numeric: normal; white-space: pre;
+}
+
+
+/* ----------------------------------------------------------- 17 charts
+   Container sizing INCLUDES the x-axis label band: no fixed height, no nested
+   scrollbar. Two measures of different scale are two stacked small multiples
+   sharing one x-axis — never two y-scales on one plot. */
+
+.chartfig { margin: 0 0 14px; }
+.chartfig-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.chartfig-tools { margin-left: auto; display: flex; gap: 10px; align-items: flex-end; }
+
+.chartstack {
+  display: flex; flex-direction: column; gap: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); padding: 8px 8px 4px;
+}
+.chartstack > .chart + .chart { border-top: 1px solid var(--grid); padding-top: 6px; }
+
+.chart { position: relative; min-height: 64px; overflow: visible; }
+/* Before the first draw a container must not reserve a tall empty box. */
+.chart:empty { min-height: 0; }
+.chartstack:not(:has(svg)) { border-color: transparent; padding: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart--equity { min-height: 150px; }
+.chart--drawdown { min-height: 96px; }
+
+/* Chart chrome, for the script to target by class on SVG nodes. */
+.chart .axis-line,
+.chart .grid-line { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .axis-line { stroke: var(--axis); }
+.chart .zero-rule { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .axis-label,
+.chart .tick-label {
+  fill: var(--muted); font-size: 10.5px; font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.chart .axis-title { fill: var(--ink-2); font-size: 11px; font-family: var(--sans); }
+.chart .series-line {
+  fill: none; stroke: var(--series-1); stroke-width: 2;
+  stroke-linejoin: round; stroke-linecap: round;
+}
+.chart .area-good     { fill: var(--good-wash); stroke: none; }
+.chart .area-critical { fill: var(--critical-wash); stroke: none; }
+.chart .area-series   { fill: var(--series-1-fill); stroke: none; }
+.chart .marker { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+.chart .marker--good     { fill: var(--good); }
+.chart .marker--critical { fill: var(--critical); }
+.chart .bar-good     { fill: var(--good); }
+.chart .bar-critical { fill: var(--critical); }
+.chart .point-label {
+  fill: var(--ink); font-size: 11px; font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.chart .crosshair { stroke: var(--ink-2); stroke-width: 1; shape-rendering: crispEdges; }
+.chart .hit { fill: transparent; }
+
+.chart-tip {
+  position: absolute; pointer-events: none; z-index: 5;
+  background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  padding: 5px 8px; font-size: 12px; box-shadow: var(--shadow);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.chart-tip b { font-family: var(--mono); }
+
+
+/* --------------------------------------------------------- 18 backtest */
+
+.bt-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.bt-form .inline-field { flex: 1 1 130px; }
+.progress {
+  height: 8px; border-radius: 4px; background: var(--surface-3);
+  overflow: hidden; border: 1px solid var(--border);
+}
+.progress > i { display: block; height: 100%; background: var(--series-1); }
+.bt-stats, .tiles--bt {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0;
+}
+
+
+/* -------------------------------------------------------------- 19 log */
+
+.log { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; }
+.log li {
+  display: grid; grid-template-columns: 62px 66px 1fr; gap: 8px;
+  padding: 3px 0; border-bottom: 1px solid var(--grid);
+  font-size: 12px; font-family: var(--mono);
+}
+.log-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.log-level { font-weight: 700; letter-spacing: 0.04em; }
+.log-msg { font-family: var(--sans); overflow-wrap: anywhere; color: var(--ink-2); }
+.lvl-DEBUG .log-level { color: var(--muted); }
+.lvl-INFO .log-level { color: var(--series-1); }
+.lvl-WARNING .log-level { color: var(--warning-ink); }
+.lvl-ERROR .log-level, .lvl-CRITICAL .log-level { color: var(--critical-ink); }
+.lvl-CRITICAL .log-msg, .lvl-ERROR .log-msg { color: var(--ink); font-weight: 600; }
+
+.footer { color: var(--muted); font-size: 11.5px; text-align: center; }
+.footer p { margin: 0; }
+
+
+/* ------------------------------------------- 20 first-run setup card
+   An empty dashboard full of zeroes reads as broken, so this stands in for it
+   until there is a token and the engine has ticked. */
+
+.setup {
+  border: 1px solid var(--warning);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 14px 16px;
+}
+.setup-title { font-size: 17px; color: var(--ink); }
+.setup-state {
+  margin-top: 6px; font-size: 13px; font-weight: 650; color: var(--warning-ink);
+}
+.setup-lead { margin-top: 8px; font-size: 13.5px; color: var(--ink-2); max-width: 70ch; }
+.setup-checks {
+  margin: 4px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-2);
+  display: flex; flex-direction: column; gap: 3px; max-width: 76ch;
+}
+.setup-foot { margin-top: 10px; font-size: 12.5px; color: var(--ink-2); }
+.setup-foot code, .panel-sub code {
+  font-family: var(--mono); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px;
+}
+
+
+/* ------------------------------------------- 21 dialogs and bottom sheets */
+
+.modal {
+  border: 1px solid var(--border-2); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink);
+  padding: 0; width: min(640px, calc(100vw - 2 * var(--gutter)));
+  max-height: calc(100dvh - 32px);
+  box-shadow: var(--shadow);
+}
+.modal::backdrop { background: rgba(0, 0, 0, 0.66); }
+.modal-form { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.modal--live, .modal--panic { border-color: var(--critical); border-width: 2px; }
+.modal-title { font-size: 17px; }
+.modal--live .modal-title, .modal--panic .modal-title { color: var(--critical-ink); }
+.modal-lead { margin: 0; font-size: 13px; color: var(--ink-2); }
+.modal-body { overflow-y: auto; max-height: 48dvh; display: flex; flex-direction: column; gap: 10px; }
+.modal-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.gate-section { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
+.gate-section h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
+  margin-bottom: 6px;
+}
+.gate-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; font-size: 12.5px;
+}
+.gate-grid div { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+.gate-grid dt, .gate-grid span:first-child { color: var(--ink-2); }
+.gate-grid b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.confirmline { display: flex; flex-direction: column; gap: 4px; }
+.confirm-label { font-size: 12.5px; color: var(--ink-2); }
+.confirm-label code {
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  border-radius: 3px; padding: 1px 5px; color: var(--ink); font-weight: 700;
+}
+.confirm-input {
+  font: inherit; font-family: var(--mono); font-size: 15px; letter-spacing: 0.06em;
+  padding: 9px 10px; border-radius: var(--radius-sm);
+  border: 2px solid var(--border-2); background: var(--surface-2); color: var(--ink);
+  width: 100%; min-height: 44px;
+}
+.confirm-input[data-match="true"] { border-color: var(--good); }
+.confirm-hint { margin: 0; font-size: 12px; color: var(--ink-2); }
+.confirm-hint[data-match="true"] { color: var(--good-ink); font-weight: 650; }
+
+
+/* ------------------------------- 22 disconnected / stale treatment
+   A frozen P&L that still looks live is the most dangerous thing this UI could
+   show. While the socket is down every figure is greyed, struck through and
+   de-emphasised. Text — reasons, log lines, labels — stays readable: it does
+   not go stale the way a price does. `.is-stale` does the same for one element
+   when only part of the snapshot is old. */
+
+body[data-conn="down"] .hero-value,
+body[data-conn="down"] .hero-delta,
+body[data-conn="down"] #panel-day .tile-value,
+body[data-conn="down"] #panel-day .tile-delta,
+body[data-conn="down"] .tick-spot,
+body[data-conn="down"] .tick-change,
+body[data-conn="down"] #panel-underlyings .ucard-spot,
+body[data-conn="down"] #panel-underlyings .ucard-change,
+body[data-conn="down"] #panel-underlyings .meta-item b,
+body[data-conn="down"] #panel-underlyings .sig-score,
+body[data-conn="down"] .pos-pnl,
+body[data-conn="down"] .pos-cell b,
+body[data-conn="down"] .table--buckets td.num,
+body[data-conn="down"] .ladder,
+.is-stale {
+  color: var(--muted) !important;
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent);
+}
+body[data-conn="down"] .chart,
+body[data-conn="down"] .hero-spark { opacity: 0.45; filter: grayscale(1); }
+body[data-conn="down"] .ticker::after {
+  content: "disconnected — these prices are not live";
+  position: sticky; left: 0;
+  display: block; padding: 2px var(--gutter) 4px;
+  font-size: 11px; font-weight: 700; color: var(--critical-ink);
+}
+/* The script may mark a whole panel's figures as not-live. */
+.panel.is-disconnected { border-color: var(--critical); }
+.panel.is-disconnected .panel-title::after {
+  content: " — not live"; color: var(--critical-ink); font-weight: 800;
+}
+
+
+/* ----------------------------------------------------------- 23 responsive
+   Works at 390px: 16px gutter, no horizontal page scroll, tabs become a
+   segmented control, dense tables reflow to stacked rows, modals become
+   bottom sheets. */
+
+/* Dense tables reflow. The script supplies data-label on every <td>. */
+@media (max-width: 559px) {
+  .table--stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table--stack tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1px 10px; padding: 7px 0;
+    border-bottom: 1px solid var(--grid);
+  }
+  .table--stack tbody tr:hover { background: transparent; }
+  .table--stack tbody th,
+  .table--stack tbody td {
+    border: 0; padding: 1px 0; white-space: normal; text-align: right;
+  }
+  .table--stack tbody th {
+    grid-column: 1 / -1; text-align: left; font-size: 13px; color: var(--ink);
+    text-transform: none; letter-spacing: 0; background: transparent;
+  }
+  .table--stack tbody td[data-label]::before {
+    content: attr(data-label);
+    float: left; text-align: left;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); font-family: var(--sans); font-weight: 650;
+    padding-right: 10px;
+  }
+  .table--stack tbody td { grid-column: 1 / -1; }
+  .table--stack tbody tr.is-blocked,
+  .table--stack tbody tr.is-good {
+    padding-left: 8px; padding-right: 8px; border-radius: var(--radius-sm);
+  }
+
+  /* Segmented control. */
+  .tabs { gap: 0; padding: 6px var(--gutter); }
+  .tab {
+    flex: 1 1 0; align-items: center; justify-content: center;
+    padding: 7px 6px; min-height: 42px;
+    border: 1px solid var(--border-2); border-right-width: 0; border-radius: 0;
+  }
+  .tab:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+  .tab:last-child  { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-right-width: 1px; }
+  .tab-name { font-size: 11px; letter-spacing: 0.04em; }
+  .tab-note { display: none; }
+  .tab[aria-selected="true"] {
+    background: var(--series-1); color: #fff; border-color: var(--series-1);
+  }
+
+  /* Modals become bottom sheets. */
+  .modal {
+    width: 100vw; max-width: 100vw;
+    margin: 0 0 0 0; position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-width: 1px 0 0;
+    max-height: 92dvh;
+  }
+  .modal--live, .modal--panic { border-top-color: var(--critical); border-top-width: 3px; }
+  .modal-actions { justify-content: stretch; }
+  .modal-actions .btn { flex: 1 1 140px; justify-content: center; min-height: 44px; }
+
+  .moderail-text { font-size: 11px; }
+
+  /* Only the rail and the main row stay stuck: mode, connection, clock and
+     PANIC. The mode switch and ARM scroll away with the page — they are not
+     emergency controls, and 140px of permanent chrome on a phone is worse. */
+  .brand { display: none; }
+  .topbar { position: static; padding: 0; gap: 0; border-bottom: 0; }
+  .topbar-row { padding: 6px var(--gutter); gap: 8px; min-width: 0; }
+  .topbar-row--main {
+    position: sticky; top: var(--rail-h); z-index: 50;
+    flex-wrap: nowrap;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-row--controls {
+    flex-wrap: wrap;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-row--controls .topbar-spacer { display: none; }
+  .topbar-row--controls .modeswitch { flex: 1 1 100%; }
+  .topbar-row--controls .mode-btn { flex: 1 1 0; }
+  .topbar-row--controls .btn { flex: 1 1 auto; justify-content: center; }
+  /* The main row never wraps and never clips: everything but PANIC is allowed
+     to shrink, and PANIC is the one item that is flex: none. */
+  .topbar-row--main > * { min-width: 0; }
+  .topbar-row--main .mode-badge { flex: 0 1 auto; overflow: hidden; }
+  .topbar-row--main .mode-badge-arm { display: none; }
+  .topbar-row--main .conn { flex: 0 1 auto; }
+  .topbar-row--main .clock { flex: 0 1 auto; }
+  .topbar-row--main .btn--panic {
+    flex: none; padding: 8px 10px; letter-spacing: 0.06em;
+  }
+  .conn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hero { padding: 12px var(--gutter); }
+  .topbar-row--main .clock-session { display: none; }
+}
+
+@media (min-width: 560px) {
+  .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pos-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bt-stats, .tiles--bt { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (min-width: 760px) {
+  body { font-size: 14px; }
+  .cardgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .tile--wide { grid-column: span 2; }
+  .split { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); }
+  .pos-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .panel { padding: 14px; }
+  .hero { padding: 16px 18px; }
+}
+
+@media (min-width: 1100px) {
+  .cardgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bt-stats, .tiles--bt { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+
+/* ------------------------------------------- 24 prefers-reduced-motion */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  body[data-mode="live"][data-armed="true"]::after { animation: none; border-color: var(--critical); }
+  .tick--flash { animation: none; }
+}
+
+
+/* ------------------------------------------------------- 25 forced-colors
+   In forced-colors the status hues are dropped, so every state must still be
+   readable from its border, its text and its glyph. */
+
+@media (forced-colors: active) {
+  .moderail, .panel, .tile, .ucard, .pos, .why, .modal, .chartstack, .setup, .cmd {
+    border: 1px solid CanvasText;
+  }
+  .btn, .chip, .tab, .mode-btn { border: 1px solid ButtonBorder; forced-color-adjust: none; }
+  .tab[aria-selected="true"] { border-bottom: 3px solid Highlight; }
+  .chip--on, .chip[aria-pressed="true"],
+  .mode-btn[aria-pressed="true"] { background: Highlight; color: HighlightText; }
+  .led, .conn-dot, .moderail-led, .brand-mark {
+    border: 1px solid CanvasText; background: CanvasText;
+  }
+  body[data-conn="down"] .conn-dot { background: Canvas; }
+  .pnl-pos, .pnl-neg, .pnl-flat,
+  .dir-up, .dir-down, .dir-flat { color: CanvasText; }
+  .badge, .state-pill { border: 1px solid CanvasText; color: CanvasText; background: Canvas; }
+  .badge--critical, .state-pill--blocked { background: CanvasText; color: Canvas; }
+  .headline, .faultbox, .why--blocked, .why-arith { background: Canvas; border: 1px solid CanvasText; }
+  .chart .series-line { stroke: CanvasText; }
+  .chart .area-good, .chart .area-critical, .chart .area-series { fill: Canvas; }
+  .chart .bar-good, .chart .bar-critical, .chart .marker { fill: CanvasText; }
+  .is-stale, body[data-conn="down"] .hero-value { opacity: 1; color: GrayText !important; }
+  body::after { border-color: CanvasText; }
+}
+
+
+/* ------------------------------------------------------------- 26 print */
+
+@media print {
+  .moderail, .topbar, .tabsnav, .ticker, .filterbar,
+  .settings-actions, .bt-form, .skiplink { display: none !important; }
+  .tabpanel[hidden] { display: flex !important; }
+  body::after { display: none; }
+  .panel { break-inside: avoid; border: 1px solid #999; }
+}
+
+
+/* =====================================================================
+   27 TERMINAL SKIN
+   The layer that makes this read as an instrument panel rather than a
+   settings form. Everything here is chrome and hierarchy — no new colour
+   meanings are introduced, and nothing below changes what a colour means.
+
+   Discipline this section enforces:
+     - numbers are mono and tabular; PROSE IS NEVER MONO
+     - panel chrome is hairline and recessive; emphasis comes from the
+       accent rule and from type scale, not from heavy fills
+     - one hero figure, and nothing else competes with it
+   ===================================================================== */
+
+/* -- page frame ------------------------------------------------------ */
+
+body {
+  background:
+    linear-gradient(180deg, rgba(57, 135, 229, 0.05) 0%, transparent 320px),
+    var(--page);
+  background-attachment: fixed;
+}
+
+#main {
+  max-width: 1320px;
+  margin-inline: auto;
+  padding-bottom: 56px;
+}
+
+/* A tall viewport left a wall of dead space under the last panel. Push the
+   footer note to the bottom instead of letting the page simply stop. */
+.tabpanel { min-height: 42vh; }
+
+/* -- panels ---------------------------------------------------------- */
+
+.panel {
+  position: relative;
+  background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 46%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* The accent rule. One hairline down the left edge is the whole device that
+   turns a box into a panel; it costs no colour meaning because it is chrome. */
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent) 0%, transparent 85%);
+  opacity: 0.8;
+}
+
+/* The two panels that matter while money is at risk carry a brighter rule. */
+.panel--key::before { opacity: 1; width: 3px; }
+
+.panel-title {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.panel-head { border-bottom: 1px solid var(--border); }
+.panel-sub { font-family: var(--sans); color: var(--muted); }
+
+/* -- mode rail ------------------------------------------------------- */
+
+/* Readable from across a room: this is the element that says whether real
+   money is in play, so it gets saturation the rest of the page does not. */
+.moderail {
+  font-family: var(--sans);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.moderail-mode { font-weight: 800; }
+.moderail-text { font-weight: 400; letter-spacing: 0.02em; text-transform: none; }
+
+body[data-mode="backtest"] .moderail {
+  background: var(--surface-3);
+  color: var(--ink-2);
+  box-shadow: inset 0 -1px 0 var(--border-2);
+}
+body[data-mode="paper"] .moderail {
+  background: linear-gradient(90deg, var(--accent) 0%, #1f5fa8 100%);
+  color: #fff;
+}
+body[data-mode="live"] .moderail {
+  background: linear-gradient(90deg, var(--critical) 0%, #8f1f1f 100%);
+  color: #fff;
+}
+
+/* Section 03 tints the mode word with the mode's own hue, which was correct
+   against the old near-surface rail but is invisible against the saturated
+   rails above — blue on blue, red on red. On a filled rail every part of it
+   is white, and the LED goes white too so it still reads as a lamp. */
+body[data-mode="paper"] .moderail-mode,
+body[data-mode="paper"] .moderail-text,
+body[data-mode="paper"] .moderail-armed,
+body[data-mode="live"]  .moderail-mode,
+body[data-mode="live"]  .moderail-text,
+body[data-mode="live"]  .moderail-armed {
+  color: #fff;
+}
+body[data-mode="paper"] .moderail-led,
+body[data-mode="live"]  .moderail-led {
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.85);
+}
+/* Armed is the one state allowed to move. Reduced-motion disables it below. */
+body[data-mode="live"][data-armed="true"] .moderail {
+  animation: railpulse 2.2s ease-in-out infinite;
+}
+@keyframes railpulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.35); }
+}
+
+/* -- header ---------------------------------------------------------- */
+
+.topbar {
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border-bottom: 1px solid var(--border-2);
+}
+
+.brand-name {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.brand-mark {
+  box-shadow: 0 0 10px var(--accent);
+  border-radius: 2px;
+}
+
+.clock-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+.clock-zone, .clock-session {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mode-badge {
+  font-family: var(--mono);
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.mode-badge-mode { font-weight: 700; letter-spacing: 0.1em; }
+.mode-badge-arm { font-family: var(--sans); color: var(--muted); }
+
+body[data-mode="live"][data-armed="true"] .mode-badge {
+  border-color: var(--critical);
+  background: var(--critical-wash);
+}
+body[data-mode="live"][data-armed="true"] .mode-badge-arm { color: var(--critical-ink); }
+
+/* PANIC always looks like the lever it is. */
+.btn--panic {
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  background: var(--critical);
+  color: #fff;
+  border: 1px solid #ff6b6b;
+  box-shadow: 0 0 0 1px rgba(208, 59, 59, 0.3), 0 2px 10px rgba(208, 59, 59, 0.35);
+}
+.btn--panic:hover { filter: brightness(1.15); }
+
+.modeswitch {
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+.mode-btn {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+}
+.mode-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.mode-btn--live[aria-pressed="true"] { background: var(--critical); }
+
+/* -- ticker tape ----------------------------------------------------- */
+
+/* Given presence even when empty: a blank strip reads as a broken widget. */
+.ticker {
+  background: var(--page);
+  border-bottom: 1px solid var(--border-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.ticker-track { gap: 0; }
+
+.tick {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem;
+  border-right: 1px solid var(--border);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tick-name {
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+.tick-spot { font-size: 0.95rem; color: var(--ink); }
+.tick-regime {
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.tick--placeholder {
+  font-family: var(--sans);
+  color: var(--muted);
+  border-right: 0;
+}
+.tick--error { background: var(--warning-wash); }
+
+/* The tick flash. Brief, and only a background — never a colour the reader has
+   to decode, because the sign beside it already says the direction. */
+.tick--flashup   { animation: tickup 700ms ease-out; }
+.tick--flashdown { animation: tickdown 700ms ease-out; }
+@keyframes tickup   { from { background: var(--good-wash); } to { background: transparent; } }
+@keyframes tickdown { from { background: var(--critical-wash); } to { background: transparent; } }
+
+/* -- tabs ------------------------------------------------------------ */
+
+.tabsnav { background: var(--surface); border-bottom: 1px solid var(--border-2); }
+.tabs { max-width: 1320px; margin-inline: auto; }
+
+.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+}
+.tab-name {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.tab-note { font-family: var(--sans); font-size: 0.68rem; color: var(--muted); }
+.tab:hover { color: var(--ink-2); background: var(--surface-2); }
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-dim), transparent);
+}
+.tab[aria-selected="true"] .tab-note { color: var(--ink-2); }
+
+/* -- hero ------------------------------------------------------------ */
+
+.hero {
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--accent-dim) 0%, transparent 60%),
+    linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+}
+.hero-label {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The one figure over 48px on the page. Proportional figures, not tabular:
+   tabular digits give every glyph the width of a zero and read loose at
+   display size. */
+.hero-value {
+  font-family: var(--sans);
+  font-size: clamp(2.6rem, 7vw, 4rem);
+  font-weight: 700;
+  font-variant-numeric: proportional-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+/* Prose under the hero is prose — not a readout. */
+.hero-delta, .hero-sub {
+  font-family: var(--sans);
+  color: var(--ink-2);
+}
+.hero-sub { color: var(--muted); font-size: 0.8rem; }
+
+/* -- stat tiles ------------------------------------------------------ */
+
+.tile {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+}
+.tile::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: var(--border-2);
+}
+.tile--warning::before  { background: var(--warning); }
+.tile--critical::before { background: var(--critical); }
+
+.tile-label {
+  font-family: var(--sans);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tile-value {
+  font-family: var(--sans);
+  font-size: 1.4rem;
+  font-weight: 650;
+  font-variant-numeric: proportional-nums;
+  line-height: 1.1;
+}
+.tile-note { font-family: var(--sans); font-size: 0.7rem; color: var(--muted); }
+
+/* -- numbers vs prose ------------------------------------------------ */
+
+/* Every column of figures aligns; nothing else gets tabular treatment. */
+.numcol, .datatable td, .kv dd, .tick-spot, .tick-chg, .clock-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Prose stays in the body sans wherever it appears inside a readout. */
+.empty, .panel-note, .field-hint, .notelist, .sigrow-block, .sigrow-reasons,
+.modal-lead, .setup-lead, .setup-foot, .warnline, .badline, .headline {
+  font-family: var(--sans);
+}
+
+/* -- positions ------------------------------------------------------- */
+
+.poscard {
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--border-2);
+  border-radius: var(--radius-sm);
+}
+.poscard.val--up   { border-left-color: var(--good); }
+.poscard.val--down { border-left-color: var(--critical); }
+.poscard-title {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  font-size: 1rem;
+}
+.poscard-pnl {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+/* -- why no trade ---------------------------------------------------- */
+
+.sigrow {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius-sm);
+}
+.sigrow--rejected { border-left-color: var(--warning); }
+.sigrow--taken    { border-left-color: var(--good); }
+
+.sigrow-side {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid var(--border-2);
+}
+.side--ce { color: var(--good-ink); }
+.side--pe { color: var(--critical-ink); }
+.sigrow-name { font-family: var(--mono); color: var(--ink); }
+.sigrow-score, .sigrow-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.sigrow-verdict {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  margin-left: auto;
+}
+.is-taken   { color: var(--good-ink); }
+.is-blocked { color: var(--warning-ink); }
+
+/* The block reason is the product. Give it the weight of a quote. */
+.sigrow-block {
+  border-left: 2px solid var(--warning);
+  background: var(--warning-wash);
+  padding: 0.5rem 0.7rem;
+  border-radius: 0 3px 3px 0;
+  color: var(--ink);
+}
+
+/* -- underlying cards ------------------------------------------------ */
+
+.ucard {
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ucard-name {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 0.85rem;
+}
+.ucard-price {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+.ucard-meta {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.ucard-quiet { font-family: var(--sans); color: var(--muted); font-size: 0.75rem; }
+.ucard--off { opacity: 0.55; }
+
+/* -- tables ---------------------------------------------------------- */
+
+.datatable, .leaderboard-table, table {
+  border-collapse: collapse;
+  width: 100%;
+}
+thead th {
+  font-family: var(--sans);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border-2);
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+}
+tbody td, tbody th {
+  border-bottom: 1px solid var(--grid);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+}
+tbody tr:hover { background: var(--surface-2); }
+tbody th { font-family: var(--mono); font-weight: 600; text-align: left; }
+.numcol { text-align: right; }
+
+/* -- state chips ----------------------------------------------------- */
+
+.state {
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.45rem;
+  border-radius: 3px;
+  border: 1px solid var(--border-2);
+}
+.state--promoted { color: var(--good-ink);     background: var(--good-wash);     border-color: var(--good); }
+.state--blocked  { color: var(--critical-ink); background: var(--critical-wash); border-color: var(--critical); }
+.state--demoted  { color: var(--warning-ink);  background: var(--warning-wash);  border-color: var(--warning); }
+.state--neutral  { color: var(--muted); }
+
+/* -- charts ---------------------------------------------------------- */
+
+.chart-grid { stroke: var(--grid); stroke-width: 1; }      /* solid, never dashed */
+.chart-axis { stroke: var(--axis); stroke-width: 1; }
+.chart-zero { stroke: var(--axis); stroke-width: 1.5; }
+.chart-line { stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; }
+.chart-area { fill: var(--series-1-fill); }
+.chart-dot  { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+.chart-tick, .chart-endlabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--muted);
+}
+.chart-endlabel { fill: var(--ink-2); font-weight: 600; }
+.chart-cross { stroke: var(--border-2); stroke-width: 1; }
+.chart-crossdot { fill: var(--ink); stroke: var(--surface); stroke-width: 2; }
+.chart-tip rect { fill: var(--surface-3); stroke: var(--border-2); }
+.chart-tip text { font-family: var(--mono); font-size: 11px; fill: var(--ink); }
+.chart-tip-sub { fill: var(--muted); }
+.spark-line { stroke: var(--series-1); stroke-width: 2; fill: none; }
+.spark-zero { stroke: var(--axis); stroke-width: 1; }
+.spark-dot.is-up   { fill: var(--good); }
+.spark-dot.is-down { fill: var(--critical); }
+
+/* -- empty states ---------------------------------------------------- */
+
+.empty {
+  color: var(--muted);
+  background: repeating-linear-gradient(
+    135deg, transparent, transparent 7px,
+    rgba(150, 180, 210, 0.03) 7px, rgba(150, 180, 210, 0.03) 14px);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* -- first-run card -------------------------------------------------- */
+
+.setup {
+  border: 1px solid var(--warning);
+  border-left: 4px solid var(--warning);
+  background: linear-gradient(180deg, var(--warning-wash), var(--surface));
+  border-radius: var(--radius);
+}
+.setup-title { font-family: var(--sans); font-weight: 700; }
+.cmd {
+  font-family: var(--mono);
+  background: var(--page);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.9rem;
+  overflow-x: auto;
+  color: var(--ink);
+}
+
+/* -- log ------------------------------------------------------------- */
+
+.logline {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  display: grid;
+  grid-template-columns: 4.5rem 4.5rem 1fr;
+  gap: 0.6rem;
+  padding: 0.18rem 0;
+  border-bottom: 1px solid var(--grid);
+}
+.log-at { color: var(--muted); font-variant-numeric: tabular-nums; }
+.log-level { font-weight: 700; font-size: 0.64rem; letter-spacing: 0.06em; }
+.log--error .log-level, .log--critical .log-level { color: var(--critical-ink); }
+.log--warning .log-level { color: var(--warning-ink); }
+.log--info .log-level { color: var(--muted); }
+.log-msg { color: var(--ink-2); word-break: break-word; }
+
+/* -- disconnected ---------------------------------------------------- */
+
+/* A stale number must not look live. Desaturate every figure and say so. */
+body[data-conn="down"] .hero-value,
+body[data-conn="down"] .tile-value,
+body[data-conn="down"] .poscard-pnl,
+body[data-conn="down"] .tick-spot,
+body[data-conn="down"] .tick-chg,
+body[data-conn="down"] .ucard-price {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+.conn-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 8px var(--good);
+  display: inline-block;
+}
+body[data-conn="down"] .conn-dot {
+  background: var(--critical);
+  box-shadow: 0 0 8px var(--critical);
+}
+.conn-text {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* -- reduced motion -------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .moderail,
+  .tick--flashup,
+  .tick--flashdown { animation: none !important; }
+}
+
+/* -- phone ----------------------------------------------------------- */
+
+@media (max-width: 560px) {
+  #main { padding-inline: var(--gutter); }
+  .hero-value { font-size: 2.4rem; }
+  .ticker { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .ticker-track { display: flex; }
+  .tab-note { display: none; }          /* the name alone fits; the note does not */
+  .logline { grid-template-columns: 3.6rem 1fr; }
+  .logline .log-level { display: none; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+
+/* =====================================================================
+   28 PHONE OVERFLOW GUARD
+   A 390px capture showed the rail, the mode switch, the banners and the
+   setup card all running off the right edge. On a phone during market
+   hours a horizontal scroll hides exactly the thing you opened the page
+   to read, so nothing is allowed to set a width the viewport cannot hold.
+   ===================================================================== */
+
+/* Deliberately NOT `overflow-x: hidden` on html/body. Hiding it makes
+   scrollWidth equal clientWidth, so a real overflow becomes undetectable —
+   that masking is what made a phantom overflow impossible to diagnose here.
+   The wrapping rules below are the actual fix; if something ever does exceed
+   the viewport, the scrollbar is the bug report. */
+html, body { max-width: 100%; }
+
+*, *::before, *::after { min-width: 0; }   /* flex/grid children may shrink */
+
+@media (max-width: 620px) {
+  :root { --gutter: 12px; }
+
+  /* The rail wraps instead of truncating: which mode you are in is the last
+     thing that should be clipped. */
+  .moderail {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-block: 5px;
+  }
+  .moderail-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    flex-basis: 100%;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .moderail-armed { margin-left: 0; }
+
+  /* Header rows stack and wrap rather than extending past the fold. */
+  .topbar-row { flex-wrap: wrap; row-gap: 8px; }
+  .topbar-spacer { display: none; }
+  .clock { margin-left: auto; }
+  .clock-session { display: none; }
+
+  .modeswitch { width: 100%; display: flex; }
+  .mode-btn { flex: 1 1 0; text-align: center; padding-inline: 0.25rem; }
+
+  .btn--panic { margin-left: auto; }
+
+  /* Tabs scroll horizontally inside their own strip — that scroll is
+     intentional and local, not the page sliding sideways. */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; }
+
+  /* Long prose and commands wrap or scroll locally. */
+  .banner, .empty, .sigrow-block, .setup-state, .setup-lead, .setup-foot {
+    overflow-wrap: anywhere;
+  }
+  .cmd { font-size: 0.8rem; }
+
+  /* Dense tables get their own scroller so the page itself stays put. */
+  .tablewrap, .panel table { display: block; overflow-x: auto; }
+  .panel table { min-width: 100%; }
+
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kv { grid-template-columns: 1fr; }
+  .poscard-head { flex-wrap: wrap; row-gap: 4px; }
+}
+
+@media (max-width: 400px) {
+  .tiles { grid-template-columns: 1fr 1fr; }
+  .hero-value { font-size: 2.1rem; }
+  .brand-name { font-size: 0.85rem; }
+  .mode-btn { font-size: 0.62rem; letter-spacing: 0.04em; }
+}

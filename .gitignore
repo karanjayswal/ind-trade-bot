@@ -1,0 +1,22 @@
+# Secrets — the access token lives in the environment, never in a file.
+.env
+indbot/config.json
+
+# Runtime state
+indbot/data/*.db
+indbot/data/*.db-wal
+indbot/data/*.db-shm
+indbot/data/*.log
+indbot/data/*.log.*
+indbot/data/instruments/
+indbot/data/backtest_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# macOS
+.DS_Store

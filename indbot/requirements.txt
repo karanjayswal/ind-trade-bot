@@ -1,0 +1,11 @@
+# indbot runtime dependencies. Install with:
+#   python3 -m pip install -r requirements.txt
+#
+# Pinned to a lower bound rather than an exact version: these are stable,
+# widely-used packages and a hard pin ages badly. Nothing here is exotic.
+
+fastapi>=0.110,<1.0      # the local dashboard API
+uvicorn>=0.27,<1.0       # ASGI server, loopback only
+httpx>=0.27,<1.0         # HTTP client for the INDstocks REST API
+websockets>=12.0,<16.0   # live price and order-update feeds
+pyotp>=2.9,<3.0          # TOTP access-token generation

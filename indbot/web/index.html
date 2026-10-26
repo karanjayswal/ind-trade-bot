@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>indbot</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231a1a19'/%3E%3Cpath d='M2 11l3.5-4 3 2.5L14 4' fill='none' stroke='%233987e5' stroke-width='2'/%3E%3C/svg%3E">
+</head>
+<body data-mode="paper" data-armed="false" data-conn="connecting" data-tab="live" data-boot="true">
+
+<a class="skiplink" href="#main">Skip to the dashboard</a>
+
+<!-- ===================================================================== -->
+<!-- MODE RAIL — the first thing on the page and the last thing you can    -->
+<!-- miss. Grey backtest, blue paper, red live. Never the same silhouette. -->
+<!-- ===================================================================== -->
+<div class="moderail" id="mode-rail">
+  <span class="moderail-led" aria-hidden="true"></span>
+  <strong class="moderail-mode" id="mode-rail-mode">PAPER</strong>
+  <span class="moderail-text" id="mode-rail-text">Simulated orders only. No money can move.</span>
+  <span class="moderail-armed" id="mode-rail-armed" hidden>ARMED</span>
+</div>
+
+<!-- ===================================================================== -->
+<!-- 1. HEADER                                                             -->
+<!-- ===================================================================== -->
+<header class="topbar">
+  <div class="topbar-row topbar-row--main">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">indbot</span>
+    </div>
+
+    <p class="mode-badge" id="mode-badge">
+      <span class="mode-badge-mode" id="mode-badge-mode">PAPER</span>
+      <span class="mode-badge-arm" id="mode-badge-arm">simulated</span>
+    </p>
+
+    <div class="topbar-spacer"></div>
+
+    <div class="conn" id="conn" title="Websocket connection to the local engine">
+      <span class="conn-dot" aria-hidden="true"></span>
+      <span class="conn-text" id="conn-text">connecting</span>
+    </div>
+
+    <div class="clock">
+      <span class="clock-time" id="clock-time">--:--:--</span>
+      <span class="clock-zone">IST</span>
+      <span class="clock-session" id="clock-session">session unknown</span>
+    </div>
+
+    <!-- PANIC lives in the sticky header, so it is on screen on every tab. -->
+    <button type="button" class="btn btn--panic" id="btn-panic">
+      <span class="btn-glyph" aria-hidden="true">&#9632;</span>PANIC
+    </button>
+  </div>
+
+  <div class="topbar-row topbar-row--controls">
+    <div class="modeswitch" role="group" aria-label="Trading mode">
+      <button type="button" class="mode-btn" data-mode-btn="backtest" aria-pressed="false">BACKTEST</button>
+      <button type="button" class="mode-btn" data-mode-btn="paper" aria-pressed="true">PAPER</button>
+      <button type="button" class="mode-btn mode-btn--live" data-mode-btn="live" aria-pressed="false">LIVE</button>
+    </div>
+
+    <button type="button" class="btn btn--arm" id="btn-arm">ARM LIVE&hellip;</button>
+    <button type="button" class="btn btn--disarm" id="btn-disarm" hidden>DISARM</button>
+
+    <button type="button" class="btn btn--run" id="btn-run" aria-live="off">START SCAN</button>
+
+    <div class="topbar-spacer"></div>
+
+    <button type="button" class="btn btn--ghost btn--theme" id="btn-theme"
+            aria-label="Colour theme: follow system">AUTO</button>
+  </div>
+
+  <!-- Mode and armed state announced, so they are never colour-only. -->
+  <p class="sr-only" id="aria-mode" role="status" aria-live="polite"></p>
+  <p class="sr-only" id="aria-alert" role="alert" aria-live="assertive"></p>
+</header>
+
+<!-- ===================================================================== -->
+<!-- 3. TICKER TAPE — the at-a-glance market state. Sign + glyph + word.   -->
+<!-- ===================================================================== -->
+<div class="ticker" id="ticker" role="region" aria-label="Index ticker">
+  <ol class="ticker-track" id="ticker-track">
+    <li class="tick tick--placeholder">Waiting for the first candle of each index&hellip;</li>
+  </ol>
+</div>
+
+<div class="banner banner--stale" id="stale-banner" hidden></div>
+<div class="banner banner--halt" id="halt-banner" hidden></div>
+<div class="banner banner--error" id="error-banner" hidden></div>
+
+<!-- ===================================================================== -->
+<!-- TABS                                                                  -->
+<!-- ===================================================================== -->
+<nav class="tabsnav">
+  <div class="tabs" role="tablist" id="tablist" aria-label="Dashboard sections">
+    <button type="button" class="tab" role="tab" id="tabbtn-live" data-tab="live"
+            aria-controls="tab-live" aria-selected="true" tabindex="0">
+      <span class="tab-name">Live</span>
+      <span class="tab-note" id="tabbtn-live-note">position &amp; signals</span>
+    </button>
+    <button type="button" class="tab" role="tab" id="tabbtn-learning" data-tab="learning"
+            aria-controls="tab-learning" aria-selected="false" tabindex="-1">
+      <span class="tab-name">Learning</span>
+      <span class="tab-note" id="tabbtn-learning-note">what works</span>
+    </button>
+    <button type="button" class="tab" role="tab" id="tabbtn-backtest" data-tab="backtest"
+            aria-controls="tab-backtest" aria-selected="false" tabindex="-1">
+      <span class="tab-name">Backtest</span>
+      <span class="tab-note" id="tabbtn-backtest-note">replay history</span>
+    </button>
+    <button type="button" class="tab" role="tab" id="tabbtn-settings" data-tab="settings"
+            aria-controls="tab-settings" aria-selected="false" tabindex="-1">
+      <span class="tab-name">Settings</span>
+      <span class="tab-note" id="tabbtn-settings-note">risk &amp; diagnostics</span>
+    </button>
+  </div>
+</nav>
+
+<main id="main">
+
+<!-- ===================================================================== -->
+<!-- TAB 1 — LIVE                                                          -->
+<!-- ===================================================================== -->
+<section class="tabpanel" role="tabpanel" id="tab-live" aria-labelledby="tabbtn-live" tabindex="-1">
+
+  <!-- 4. FIRST RUN. An empty dashboard full of zeroes reads as broken, so
+       until there is a token and a tick this card stands in its place. -->
+  <section class="setup" id="setup-card" aria-labelledby="h-setup" hidden>
+    <h2 class="setup-title" id="h-setup">This bot is not ready to trade yet</h2>
+    <p class="setup-state" id="setup-state">Checking what is missing&hellip;</p>
+    <p class="setup-lead">
+      Run the doctor in a terminal from the project folder. It is the one command that
+      proves every link in the chain before any money is at risk.
+    </p>
+    <pre class="cmd"><code id="setup-cmd">python3 run.py doctor</code></pre>
+    <ol class="setup-checks">
+      <li>Your access token is valid and the broker answers.</li>
+      <li>The account is enabled for F&amp;O, so an option order would not be refused.</li>
+      <li>The instrument masters download and parse, which is where lot sizes come from.</li>
+      <li>One real option chain comes back with prices on both sides of the book.</li>
+      <li>It prints the premium budget your per-trade loss limit implies &mdash; the number
+          that decides whether this bot can take a trade at all.</li>
+    </ol>
+    <p class="setup-foot">
+      Token expired? <code>python3 run.py token</code> mints a fresh 24-hour token from your
+      TOTP secret, then run the doctor again. This page keeps working in
+      <strong>BACKTEST</strong> mode without a token.
+    </p>
+  </section>
+
+  <!-- HERO — exactly one hero figure in this view: today's realised P&L. -->
+  <section class="hero" id="panel-hero" aria-labelledby="hero-label">
+    <div class="hero-main">
+      <h2 class="hero-label" id="hero-label">Today&rsquo;s realised P&amp;L</h2>
+      <p class="hero-value" id="hero-pnl">&#8377;&nbsp;&mdash;</p>
+      <p class="hero-delta" id="hero-delta"></p>
+      <p class="hero-sub" id="hero-sub">Closed trades only. An open position is marked separately below.</p>
+    </div>
+    <div class="hero-side">
+      <div class="hero-spark" id="hero-spark" aria-hidden="true"></div>
+      <p class="hero-sparklabel" id="hero-sparklabel"></p>
+    </div>
+  </section>
+
+  <!-- 3. DAY STRIP -->
+  <section class="panel panel--strip" id="panel-day" aria-labelledby="h-day">
+    <h2 class="panel-title" id="h-day">Today</h2>
+    <div class="tiles" id="day-tiles">
+      <p class="empty">Nothing has happened today yet. Realised P&amp;L, the trades used of
+      today&rsquo;s cap, open positions and the day-halt state appear here on the first tick.</p>
+    </div>
+    <p class="panel-note" id="day-note"></p>
+  </section>
+
+  <!-- 5. POSITIONS -->
+  <section class="panel panel--key" id="panel-positions" aria-labelledby="h-positions">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-positions">Open position</h2>
+      <p class="panel-sub" id="positions-sub"></p>
+    </div>
+    <div id="position-list">
+      <p class="empty">No position is open. The bot is waiting for a signal that clears the
+      risk gate; when one does, the contract, the stop and the live P&amp;L appear here.</p>
+    </div>
+  </section>
+
+  <!-- 6. WHY NO TRADE — as prominent as the positions panel, by contract. -->
+  <section class="panel panel--key" id="panel-why" aria-labelledby="h-why">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-why">Why no trade</h2>
+      <p class="panel-sub">Every signal the bot saw and did not take, with the reason in full.</p>
+    </div>
+    <p class="headline" id="why-headline" hidden></p>
+    <div class="filterbar" role="group" aria-label="Signal feed filter">
+      <button type="button" class="chip chip--on" data-why-filter="rejected" aria-pressed="true">Rejected</button>
+      <button type="button" class="chip" data-why-filter="taken" aria-pressed="false">Taken</button>
+      <button type="button" class="chip" data-why-filter="all" aria-pressed="false">All</button>
+    </div>
+    <div id="why-list">
+      <p class="empty">No signal has been evaluated yet. Once a candle closes and a setup fires,
+      the reason it was taken or refused is written here as a sentence.</p>
+    </div>
+  </section>
+
+  <!-- 4. UNDERLYINGS -->
+  <section class="panel" id="panel-underlyings" aria-labelledby="h-underlyings">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-underlyings">Market scan</h2>
+      <p class="panel-sub" id="underlyings-sub"></p>
+    </div>
+    <div class="cardgrid" id="underlying-cards">
+      <p class="empty">No index has been scanned yet. Start the scan, or wait for the next poll.</p>
+    </div>
+  </section>
+</section>
+
+<!-- ===================================================================== -->
+<!-- TAB 2 — LEARNING                                                      -->
+<!-- ===================================================================== -->
+<section class="tabpanel" role="tabpanel" id="tab-learning" aria-labelledby="tabbtn-learning" tabindex="-1" hidden>
+
+  <section class="panel" id="panel-learning" aria-labelledby="h-learning">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-learning">What the bot has learned</h2>
+      <p class="panel-sub" id="learning-headline"></p>
+    </div>
+
+    <!-- Equity and drawdown: two stacked small multiples on ONE shared x-axis.
+         Never two y-scales on one plot. -->
+    <figure class="chartfig" id="equity-figure">
+      <figcaption class="chartfig-head">
+        <h3 class="subhead" id="h-equity">Realised P&amp;L, running total, and drawdown from peak</h3>
+        <div class="chartfig-tools">
+          <label class="inline-field" for="equity-days">
+            <span>Days</span>
+            <select id="equity-days">
+              <option value="7">7</option>
+              <option value="30" selected>30</option>
+              <option value="90">90</option>
+            </select>
+          </label>
+          <button type="button" class="chip" id="equity-table-toggle" aria-pressed="false"
+                  aria-controls="equity-table">Table</button>
+        </div>
+      </figcaption>
+
+      <div class="chartstack" id="equity-stack">
+        <div class="chart chart--equity" id="equity-chart" data-chart="line"></div>
+        <div class="chart chart--drawdown" id="equity-dd-chart" data-chart="area"></div>
+      </div>
+
+      <div class="table-wrap" id="equity-table" hidden></div>
+      <p class="empty" id="equity-empty" hidden></p>
+    </figure>
+
+    <h3 class="subhead" id="h-buckets">Buckets, best expectancy first</h3>
+    <div class="table-wrap">
+      <table class="table table--buckets table--stack" id="leaderboard-table">
+        <caption class="sr-only">Learning buckets, best expectancy first</caption>
+      </table>
+    </div>
+    <p class="empty" id="leaderboard-empty">
+      Nothing learned yet. The bot needs closed trades in a bucket before it will score it;
+      until then every setup is traded at its raw confluence score.
+    </p>
+  </section>
+
+  <section class="panel" id="panel-trades" aria-labelledby="h-trades">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-trades">Recent trades</h2>
+      <p class="panel-sub" id="trades-sub">Newest first, in the current mode only.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="table table--trades table--stack" id="trades-table">
+        <caption class="sr-only">Recent trades, newest first</caption>
+      </table>
+    </div>
+    <p class="empty" id="trades-empty">
+      No trade today. Nothing has been entered in this mode yet &mdash; the &ldquo;why no trade&rdquo;
+      panel on the LIVE tab says what stopped each signal.
+    </p>
+  </section>
+</section>
+
+<!-- ===================================================================== -->
+<!-- TAB 3 — BACKTEST                                                      -->
+<!-- ===================================================================== -->
+<section class="tabpanel" role="tabpanel" id="tab-backtest" aria-labelledby="tabbtn-backtest" tabindex="-1" hidden>
+
+  <section class="panel" id="panel-backtest" aria-labelledby="h-backtest">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-backtest">Backtest</h2>
+      <p class="panel-sub">Replays the same strategy, chain filter and risk gate over real expired option premiums.</p>
+    </div>
+
+    <form class="bt-form" id="backtest-form">
+      <label class="inline-field" for="bt-underlying">
+        <span>Underlying</span>
+        <select id="bt-underlying" required></select>
+      </label>
+      <label class="inline-field" for="bt-start">
+        <span>Start (IST)</span>
+        <input type="date" id="bt-start" required>
+      </label>
+      <label class="inline-field" for="bt-end">
+        <span>End (IST)</span>
+        <input type="date" id="bt-end" required>
+      </label>
+      <button type="submit" class="btn btn--primary" id="bt-run">Run backtest</button>
+      <button type="button" class="btn btn--ghost" id="bt-cancel" hidden>Cancel run</button>
+    </form>
+
+    <p class="formmsg" id="bt-msg" role="status" aria-live="polite"></p>
+    <div id="bt-progress" hidden></div>
+
+    <p class="empty" id="bt-empty">
+      No backtest has been run in this session. Pick an index and a date range above;
+      the replay uses real expired premiums, so a range with no stored chain is skipped
+      and says so rather than being filled in.
+    </p>
+
+    <div id="bt-result" hidden>
+      <p class="headline" id="bt-headline"></p>
+      <div class="tiles tiles--bt" id="bt-stats"></div>
+
+      <!-- Two stacked small multiples, one shared x-axis. -->
+      <figure class="chartfig" id="bt-equity-figure">
+        <figcaption class="chartfig-head">
+          <h3 class="subhead" id="h-bt-equity">Running P&amp;L and drawdown across the replayed window</h3>
+          <div class="chartfig-tools">
+            <button type="button" class="chip" id="bt-curve-table-toggle" aria-pressed="false"
+                    aria-controls="bt-curve-table">Table</button>
+          </div>
+        </figcaption>
+        <div class="chartstack" id="bt-chart-stack">
+          <div class="chart chart--equity" id="bt-equity-chart" data-chart="line"></div>
+          <div class="chart chart--drawdown" id="bt-dd-chart" data-chart="area"></div>
+        </div>
+        <div class="table-wrap" id="bt-curve-table" hidden></div>
+      </figure>
+
+      <h3 class="subhead" id="h-bt-blocks">Where the signals went</h3>
+      <ul class="notelist" id="bt-blocks"></ul>
+
+      <h3 class="subhead" id="h-bt-trades">Trades</h3>
+      <div id="bt-trades"></div>
+
+      <h3 class="subhead" id="h-bt-caveats">What this backtest assumes</h3>
+      <ul class="notelist" id="bt-caveats"></ul>
+      <ul class="notelist" id="bt-skipped"></ul>
+    </div>
+  </section>
+</section>
+
+<!-- ===================================================================== -->
+<!-- TAB 4 — SETTINGS                                                      -->
+<!-- ===================================================================== -->
+<section class="tabpanel" role="tabpanel" id="tab-settings" aria-labelledby="tabbtn-settings" tabindex="-1" hidden>
+
+  <!-- RISK ARITHMETIC + RISK SETTINGS, side by side, deliberately: the
+       trade-off has to be visible where it is edited. -->
+  <section class="panel" id="panel-risk" aria-labelledby="h-risk">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-risk">Risk arithmetic &amp; limits</h2>
+      <p class="panel-sub">
+        What your per-trade loss limit allows the bot to buy. The table is computed from the
+        settings beside it, so you can see the trade-off where you change it.
+      </p>
+    </div>
+    <div class="split">
+      <div class="split-main">
+        <div class="table-wrap">
+          <table class="table table--risk table--stack" id="risk-table">
+            <caption class="sr-only">Premium budget per index at the current per-trade loss limit</caption>
+          </table>
+        </div>
+        <ul class="notelist" id="risk-notes"></ul>
+      </div>
+      <form class="split-side settings" id="settings-form" novalidate>
+        <h3 class="subhead" id="h-settings">Settings</h3>
+        <p class="settings-lead">
+          Every field explains what it does. Changing a limit changes what the gate will
+          allow on the very next candle &mdash; nothing here waits for a restart.
+        </p>
+        <div class="fields" id="settings-fields"></div>
+        <div class="settings-actions">
+          <button type="submit" class="btn btn--primary" id="btn-save-settings">Save settings</button>
+          <button type="button" class="btn btn--ghost" id="btn-reset-settings">Revert</button>
+        </div>
+        <p class="formmsg" id="settings-msg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- DIAGNOSTICS -->
+  <section class="panel" id="panel-diag" aria-labelledby="h-diag">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-diag">Diagnostics</h2>
+      <p class="panel-sub">Account, instrument master and tick health. Run
+        <code>python3 run.py doctor</code> if anything here is missing.</p>
+    </div>
+    <ul class="notelist" id="diag-list">
+      <li>Waiting for the first snapshot.</li>
+    </ul>
+  </section>
+
+  <!-- 9. LOG -->
+  <section class="panel" id="panel-log" aria-labelledby="h-log">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-log">Engine log</h2>
+      <p class="panel-sub">Newest first, in IST.</p>
+    </div>
+    <div class="filterbar" role="group" aria-label="Log level filter">
+      <button type="button" class="chip chip--on" data-log-filter="INFO" aria-pressed="true">Info+</button>
+      <button type="button" class="chip" data-log-filter="WARNING" aria-pressed="false">Warnings+</button>
+      <button type="button" class="chip" data-log-filter="ERROR" aria-pressed="false">Errors+</button>
+    </div>
+    <ol class="log" id="log-list"></ol>
+    <p class="empty" id="log-empty">
+      The engine has not logged anything yet at this level.
+    </p>
+  </section>
+</section>
+
+  <footer class="footer">
+    <p id="footer-note"></p>
+  </footer>
+</main>
+
+<!-- ===================================================================== -->
+<!-- 2. THE LIVE GATE                                                      -->
+<!-- ===================================================================== -->
+<dialog class="modal modal--live" id="live-gate" aria-labelledby="live-gate-title">
+  <form method="dialog" class="modal-form" id="live-gate-form">
+    <h2 class="modal-title" id="live-gate-title">Arm live trading with real money</h2>
+    <p class="modal-lead">
+      Everything below is what the bot will be allowed to do with your money as soon as you arm it.
+      Read it, then type the phrase. A click alone will not arm anything.
+    </p>
+
+    <div class="modal-body" id="live-gate-body"></div>
+
+    <div class="confirmline">
+      <label class="confirm-label" for="arm-input">
+        Type <code id="arm-phrase-text">ARM LIVE TRADING</code> exactly to enable the ARM button
+      </label>
+      <input type="text" id="arm-input" class="confirm-input" autocomplete="off"
+             autocapitalize="characters" spellcheck="false"
+             aria-describedby="arm-hint">
+      <p class="confirm-hint" id="arm-hint" role="status" aria-live="polite">Not armed.</p>
+    </div>
+
+    <p class="formmsg" id="live-gate-msg" role="alert" aria-live="assertive"></p>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn--ghost" id="live-gate-cancel">Cancel &mdash; stay in paper</button>
+      <button type="button" class="btn btn--ghost" id="live-gate-dry">
+        Switch to LIVE but stay disarmed
+      </button>
+      <button type="button" class="btn btn--danger" id="live-gate-arm" disabled>
+        ARM LIVE TRADING
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<!-- PANIC CONFIRMATION ---------------------------------------------------- -->
+<dialog class="modal modal--panic" id="panic-gate" aria-labelledby="panic-gate-title">
+  <form method="dialog" class="modal-form">
+    <h2 class="modal-title" id="panic-gate-title">Panic</h2>
+    <p class="modal-lead" id="panic-gate-what"></p>
+    <ul class="notelist" id="panic-gate-detail"></ul>
+    <p class="formmsg" id="panic-gate-msg" role="alert" aria-live="assertive"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn--ghost" id="panic-cancel">Cancel</button>
+      <button type="button" class="btn btn--panic" id="panic-confirm">Yes &mdash; flatten and halt</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- RESULT / ERROR SHEET -------------------------------------------------- -->
+<dialog class="modal" id="sheet" aria-labelledby="sheet-title">
+  <form method="dialog" class="modal-form">
+    <h2 class="modal-title" id="sheet-title"></h2>
+    <div class="modal-body" id="sheet-body"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn--primary" id="sheet-close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

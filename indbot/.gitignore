@@ -1,0 +1,19 @@
+# Secrets. The access token lives in the environment, never in a file.
+.env
+config.json
+
+# Runtime state
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.log
+data/*.log.*
+data/instruments/
+data/backtest_cache/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
