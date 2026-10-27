@@ -30,12 +30,13 @@ import re
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from types import TracebackType
 from typing import Any, Iterator, Sequence
 
 import httpx
 
-from . import clock
+from . import clock, token_store
 from .errors import (
     ApiError,
     AuthError,
@@ -53,6 +54,57 @@ BASE_URL = "https://api.indstocks.com"
 
 #: Where the access token lives when it is not passed to the constructor.
 TOKEN_ENV = "INDSTOCKS_ACCESS_TOKEN"
+
+#: Env vars naming a PEM bundle of trusted roots, in the order they are honoured.
+#: INDBOT_CA_BUNDLE is ours; the rest are the de-facto standards other tools read,
+#: so a machine already configured for a TLS-inspecting proxy needs nothing new.
+CA_BUNDLE_ENVS = ("INDBOT_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE")
+
+#: Looked for next to the project, for the common case of a bundle dropped in the
+#: folder. Checked in order; the first readable one wins.
+CA_BUNDLE_FILENAMES = ("cacert.pem", "ca-bundle.pem", "corporate-ca.pem")
+
+
+def resolve_ca_bundle(
+    explicit: str | os.PathLike[str] | None = None,
+) -> Path | None:
+    """Find the CA bundle to verify TLS against, or None for the system store.
+
+    Order: the explicit argument, then CA_BUNDLE_ENVS, then CA_BUNDLE_FILENAMES in
+    the package parent and its parent. Returns None when nothing is found, which
+    means "use the default trust store" — not "skip verification".
+
+    This exists because a corporate TLS-inspecting proxy presents a self-signed
+    root that is not in certifi's store, which surfaces as
+    CERTIFICATE_VERIFY_FAILED on the first call. The fix is to trust that root,
+    never to pass verify=False.
+    """
+    candidates: list[Path] = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    for env in CA_BUNDLE_ENVS:
+        raw = os.environ.get(env, "").strip()
+        if raw:
+            candidates.append(Path(raw).expanduser())
+    here = Path(__file__).resolve().parent.parent
+    for folder in (here, here.parent):
+        for name in CA_BUNDLE_FILENAMES:
+            candidates.append(folder / name)
+
+    for path in candidates:
+        try:
+            if path.is_file() and path.stat().st_size > 0:
+                return path
+        except OSError:
+            continue
+    if explicit:
+        # An explicit path that does not exist is a configuration error, not a
+        # reason to silently fall back to a store that is already known to fail.
+        raise ConfigError(
+            f"ca_bundle {explicit!r} does not exist or is not readable",
+            key="ca_bundle",
+        )
+    return None
 
 # --------------------------------------------------------------------------- #
 # Documented limits, enums and quirks — one place, so a doc change is one edit.
@@ -378,24 +430,31 @@ class INDstocksClient:
         base_url: str = BASE_URL,
         timeout: float = 15.0,
         share_rate_limiter: bool = True,
+        ca_bundle: str | os.PathLike[str] | None = None,
     ) -> None:
         """Build a client; the token defaults to $INDSTOCKS_ACCESS_TOKEN.
 
         `share_rate_limiter` keeps the token buckets process-wide (keyed by
         account) because the limits are enforced per account, not per object —
         two clients on one token must still add up to 5 data calls a second.
+
+        `ca_bundle` is a PEM file of trusted roots, for networks behind a TLS
+        inspecting proxy whose root CA is not in the system store. Defaults to
+        `resolve_ca_bundle()`. Verification is never disabled: on a network that
+        rewrites TLS, turning verification off would hand your access token and
+        every order to whatever is doing the rewriting.
         """
-        raw = token if token is not None else os.environ.get(TOKEN_ENV, "")
-        raw = (raw or "").strip()
-        if raw.lower().startswith("bearer "):
-            # The header takes the bare token. A pasted "Bearer …" would 403 every
-            # call, so strip it rather than failing the user's whole session.
-            log.warning("access token had a 'Bearer ' prefix; stripping it")
-            raw = raw[7:].strip()
+        if token is not None:
+            raw, self.token_source = token_store.clean(token), "argument"
+        else:
+            # $INDSTOCKS_ACCESS_TOKEN first, then the file the dashboard writes,
+            # so pasting a token into the UI works without restarting the process.
+            raw, self.token_source = token_store.load()
         if not raw:
             raise AuthError(
-                f"no INDstocks access token: pass token= or set ${TOKEN_ENV}. "
-                "Generate one from the dashboard or with generate_token()."
+                f"no INDstocks access token: set ${TOKEN_ENV}, paste one into the "
+                f"dashboard's Settings tab, or pass token=. Tokens expire at 07:00 "
+                f"IST, so a token from yesterday will not work."
             )
         self.token = raw
         self.base_url = base_url.rstrip("/")
@@ -407,9 +466,12 @@ class INDstocksClient:
             else f"private-{id(self):x}"
         )
         self._buckets = _buckets_for(key)
+        self.ca_bundle = resolve_ca_bundle(ca_bundle)
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=self.timeout,
+            # str path = verify against that PEM; True = the system/certifi store.
+            verify=str(self.ca_bundle) if self.ca_bundle else True,
             headers={
                 # No "Bearer " prefix — the API takes the raw token.
                 "Authorization": self.token,
@@ -417,6 +479,8 @@ class INDstocksClient:
                 "User-Agent": "indbot/1.0",
             },
         )
+        if self.ca_bundle:
+            log.info("TLS verified against %s", self.ca_bundle)
         log.debug("INDstocksClient ready for %s with token %s", self.base_url, _mask(self.token))
 
     # -- lifecycle ---------------------------------------------------------- #
@@ -1447,7 +1511,14 @@ def generate_token(
     log.info("requesting a new access token for client_id %s", _mask(cid))
     started = time.perf_counter()
     try:
-        with httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout) as client:
+        # Same trust store as the main client: this call carries the MPIN and the
+        # TOTP code, so it is the last request that should go out unverified.
+        _ca = resolve_ca_bundle()
+        with httpx.Client(
+            base_url=base_url.rstrip("/"),
+            timeout=timeout,
+            verify=str(_ca) if _ca else True,
+        ) as client:
             response = client.post(
                 "/generate/token",
                 headers={"x-api-key": cid, "Content-Type": "application/json"},

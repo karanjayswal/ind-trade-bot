@@ -55,24 +55,50 @@ SETUP_NAMES: tuple[str, ...] = (
 # resolved value wins over the constant here. `Instruments.resolve_underlyings()` does
 # that and logs a warning per mismatch, so a wrong constant is self-healing rather than
 # a silently wrong order.
+#: The five index underlyings.
+#:
+#: Every `scrip` and `label` below was VERIFIED against the live
+#: `/market/instruments?source=index` master on 27 Oct 2026 and cross-checked by
+#: price level, because four of the five original guesses were wrong in the worst
+#: possible way: they returned real candles for the WRONG index. `40000002` is
+#: NIFTY 100 (23,733), not BANKNIFTY; `40000003` is BANK NIFTY (54,392), not
+#: FINNIFTY. A bot reading those would have computed signals on one index and
+#: bought options on another, and nothing would have looked broken.
+#:
+#: Hence `price_band`: the plausible range for each index. `Instruments` checks the
+#: live spot against it and refuses the underlying if it falls outside, so a future
+#: id change surfaces as a blocked scan rather than a wrong trade. Widen a band only
+#: after checking the index really has moved that far.
+#:
+#: `hist_segment` is the prefix for the REST `scrip-codes` surface and is NOT the
+#: exchange: an NSE *index* is `NIDX_`, a BSE index `BIDX_`. Using `NSE_`/`BSE_`
+#: there returns `400 Invalid scrip codes` — the original bug.
 UNDERLYINGS: dict[str, dict] = {
     "NIFTY":      {"scrip": "40000001", "exchange": "NSE", "chain_segment": "INDEX",
-                   "ws": "NIDX:26000", "fno_segment": "NFO", "strike_step": 50,  "label": "NIFTY 50"},
-    "BANKNIFTY":  {"scrip": "40000002", "exchange": "NSE", "chain_segment": "INDEX",
-                   "ws": "NIDX:26009", "fno_segment": "NFO", "strike_step": 100, "label": "NIFTY BANK"},
-    "FINNIFTY":   {"scrip": "40000003", "exchange": "NSE", "chain_segment": "INDEX",
-                   "ws": "NIDX:26037", "fno_segment": "NFO", "strike_step": 50,  "label": "NIFTY FIN SERVICE"},
-    "MIDCPNIFTY": {"scrip": "40000016", "exchange": "NSE", "chain_segment": "INDEX",
-                   "ws": "NIDX:26074", "fno_segment": "NFO", "strike_step": 25,  "label": "NIFTY MIDCAP SELECT"},
-    "SENSEX":     {"scrip": "40000100", "exchange": "BSE", "chain_segment": "INDEX",
-                   "ws": "BIDX:1",      "fno_segment": "BFO", "strike_step": 100, "label": "SENSEX"},
+                   "hist_segment": "NIDX", "fno_segment": "NFO", "strike_step": 50,
+                   "label": "NIFTY 50", "price_band": (15000, 40000)},
+    "BANKNIFTY":  {"scrip": "40000003", "exchange": "NSE", "chain_segment": "INDEX",
+                   "hist_segment": "NIDX", "fno_segment": "NFO", "strike_step": 100,
+                   "label": "BANK NIFTY", "price_band": (35000, 90000)},
+    "FINNIFTY":   {"scrip": "40000100", "exchange": "NSE", "chain_segment": "INDEX",
+                   "hist_segment": "NIDX", "fno_segment": "NFO", "strike_step": 50,
+                   "label": "Nifty Financial", "price_band": (15000, 45000)},
+    "MIDCPNIFTY": {"scrip": "40000093", "exchange": "NSE", "chain_segment": "INDEX",
+                   "hist_segment": "NIDX", "fno_segment": "NFO", "strike_step": 25,
+                   "label": "Nifty Midcap Sel", "price_band": (7000, 30000)},
+    "SENSEX":     {"scrip": "40000006", "exchange": "BSE", "chain_segment": "INDEX",
+                   "hist_segment": "BIDX", "fno_segment": "BFO", "strike_step": 100,
+                   "label": "SENSEX", "price_band": (50000, 130000)},
 }
 
 #: Lot sizes used ONLY to render the risk table before the instrument master has been
 #: downloaded. `instruments.FALLBACK_LOTS` is the authoritative copy and the live CSV
 #: beats both — lot sizes change by circular, so never trade off this dict.
 _FALLBACK_LOTS: dict[str, int] = {
-    "NIFTY": 75, "BANKNIFTY": 35, "FINNIFTY": 65, "MIDCPNIFTY": 120, "SENSEX": 20,
+    # Verified against the live F&O master on 27 Oct 2026. The previous values
+    # (75/35/65) were wrong and, because the master lookup was also broken, they
+    # silently sized every position. Prefer the CSV; this is the last resort.
+    "NIFTY": 65, "BANKNIFTY": 30, "FINNIFTY": 60, "MIDCPNIFTY": 120, "SENSEX": 20,
 }
 
 #: Indicative at-the-money premium band, rupees per unit. Reference only — it is here

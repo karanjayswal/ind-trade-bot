@@ -1495,6 +1495,129 @@ async function saveSettings() {
  * 17. Diagnostics & log
  * ======================================================================= */
 
+/* ---------------------------------------------------------- access token */
+
+/** Token status, plus a banner once it is within an hour of lapsing.
+ *  Tokens die at 07:00 IST daily, so this is a standing chore and the UI should
+ *  warn before it becomes a 403 in the middle of a session. */
+function renderToken(s) {
+  const t = s.token || {};
+  const line = el('token-status-text');
+  if (line) {
+    line.textContent = t.present
+      ? String(t.status_text || 'Present.')
+      : 'No token. The bot cannot fetch prices or place orders until one is set.';
+    line.className = t.expired ? 'bad' : (t.expiring_soon ? 'warn' : '');
+  }
+
+  const box = el('token-status');
+  if (box) {
+    const rows = [['Status', line ? line.textContent : '']];
+    if (t.present) {
+      rows.push(['Token', String(t.masked || '') + '  (' + (t.length || 0) + ' chars)']);
+      if (t.client_id) rows.push(['Client id', String(t.client_id)]);
+      if (t.issued_at_text) rows.push(['Issued', String(t.issued_at_text)]);
+      if (t.expires_at_text) rows.push(['Expires', String(t.expires_at_text)]);
+      if (t.source) rows.push(['Source', String(t.source)]);
+      rows.push(['Broker link', t.client_attached ? 'connected' : 'not connected']);
+    }
+    fill(box, rows.flatMap(([k, v], i) => [
+      h('dt', { text: k }),
+      h('dd', { class: i === 0 && (t.expired || t.expiring_soon) ? 'bad' : '', text: v }),
+    ]));
+  }
+
+  // An env-var token cannot be replaced from here; say so rather than letting
+  // the form look like it will work.
+  const save = el('token-save');
+  const input = el('token-input');
+  if (t.env_override) {
+    if (save) save.disabled = true;
+    if (input) {
+      input.disabled = true;
+      input.placeholder = 'Set by $INDSTOCKS_ACCESS_TOKEN — unset it to paste here';
+    }
+  } else {
+    if (save) save.disabled = false;
+    if (input) input.disabled = false;
+  }
+
+  banner('token-banner', t.expired
+    ? 'The access token has expired, so no prices are being fetched and no order could be '
+      + 'placed. Paste a fresh one in Settings → Access token.'
+    : (t.expiring_soon
+      ? 'The access token ' + String(t.status_text || 'expires shortly')
+        + ' Refresh it in Settings → Access token before the next session.'
+      : ''));
+}
+
+function initToken() {
+  const form = el('token-form');
+  if (form && !form.dataset.wired) {
+    form.dataset.wired = '1';
+    form.addEventListener('submit', (e) => { e.preventDefault(); saveToken(); });
+  }
+  const reveal = el('token-reveal');
+  if (reveal && !reveal.dataset.wired) {
+    reveal.dataset.wired = '1';
+    reveal.addEventListener('click', () => {
+      const input = el('token-input');
+      if (!input) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      reveal.textContent = show ? 'Hide' : 'Show';
+      reveal.setAttribute('aria-pressed', show ? 'true' : 'false');
+    });
+  }
+  const clear = el('token-clear');
+  if (clear && !clear.dataset.wired) {
+    clear.dataset.wired = '1';
+    clear.addEventListener('click', async () => {
+      const msg = el('token-msg');
+      if (!window.confirm('Forget the stored token? The bot will stop fetching prices '
+        + 'until you paste a new one.')) return;
+      try {
+        await api.request('DELETE', '/api/token');
+        if (msg) { msg.className = 'formmsg'; msg.textContent = 'Stored token removed.'; }
+        await refreshNow();
+      } catch (err) {
+        if (msg) { msg.className = 'formmsg bad'; msg.textContent = err.message; }
+      }
+    });
+  }
+}
+
+async function saveToken() {
+  const input = el('token-input');
+  const msg = el('token-msg');
+  const btn = el('token-save');
+  const raw = input ? input.value.trim() : '';
+  if (!raw) {
+    if (msg) { msg.className = 'formmsg bad'; msg.textContent = 'Paste a token first.'; }
+    return;
+  }
+  if (btn) btn.disabled = true;
+  if (msg) { msg.className = 'formmsg'; msg.textContent = 'Checking it against your profile…'; }
+  try {
+    const out = await api.post('/api/token', { token: raw });
+    const info = (out && out.token) || {};
+    if (input) { input.value = ''; input.type = 'password'; }
+    const reveal = el('token-reveal');
+    if (reveal) { reveal.textContent = 'Show'; reveal.setAttribute('aria-pressed', 'false'); }
+    if (msg) {
+      msg.className = 'formmsg good';
+      msg.textContent = 'Token accepted' + (info.client_id ? ' for client ' + info.client_id : '')
+        + '. ' + String(info.status_text || '');
+    }
+    alertNow('Access token updated.');
+    await refreshNow();
+  } catch (err) {
+    if (msg) { msg.className = 'formmsg bad'; msg.textContent = err.message; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function renderDiag(s) {
   const box = el('diag-list');
   if (!box) return;
@@ -1888,6 +2011,7 @@ function render(s) {
     renderUnderlyings(s);
     renderLearning(s);
     renderSettings(s);
+    renderToken(s);
     renderDiag(s);
     renderLog(s);
     initBacktest(s);
@@ -1961,6 +2085,7 @@ function boot() {
   initControls();
   initWhyFilter();
   initSettings();
+  initToken();
   initBacktest(null);
   refreshNow().finally(connect);
 }

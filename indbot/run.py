@@ -42,6 +42,10 @@ log = logging.getLogger("indbot.cli")
 EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
+os.environ["REQUESTS_CA_BUNDLE"] = '/Users/AL58376/Downloads/Personal_Project/cacert.pem'
+os.environ["SSL_CERT_FILE"] = '/Users/AL58376/Downloads/Personal_Project/cacert.pem'
+os.environ["NODE_EXTRA_CA_CERTS"] = '/Users/AL58376/Downloads/Personal_Project/cacert.pem'
+os.environ["AWS_CA_BUNDLE"] = '/Users/AL58376/Downloads/Personal_Project/cacert.pem'
 
 
 # ---------------------------------------------------------------------------

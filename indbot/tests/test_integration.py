@@ -895,3 +895,59 @@ class TestSuiteIsFast(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestWrongInstrumentGuard(unittest.TestCase):
+    """A valid id for the WRONG index must not produce a tradable signal.
+
+    This is the failure that got four of five underlyings wrong in the first
+    live run: `40000002` is NIFTY 100 and `40000003` is BANK NIFTY, so the
+    original constants returned real, well-formed candles for indices nobody
+    asked for. Nothing in the response says "wrong instrument" — only the price
+    level does.
+    """
+
+    def test_scrip_code_uses_the_index_segment_not_the_exchange(self) -> None:
+        """NIDX_/BIDX_, never NSE_/BSE_ — the latter is a 400 from the live API."""
+        from indbot.config import UNDERLYINGS
+        for name, meta in UNDERLYINGS.items():
+            seg = meta.get("hist_segment")
+            self.assertIn(seg, ("NIDX", "BIDX"), f"{name} has hist_segment={seg!r}")
+            expected = "BIDX" if meta["exchange"] == "BSE" else "NIDX"
+            self.assertEqual(seg, expected, f"{name} is on {meta['exchange']}")
+
+    def test_every_underlying_declares_a_price_band(self) -> None:
+        """Without a band there is nothing to catch a wrong id with."""
+        from indbot.config import UNDERLYINGS
+        for name, meta in UNDERLYINGS.items():
+            band = meta.get("price_band")
+            self.assertIsNotNone(band, f"{name} has no price_band")
+            low, high = band
+            self.assertLess(low, high, f"{name} band is inverted")
+            self.assertGreater(low, 0, f"{name} band starts at or below zero")
+
+    def test_a_close_outside_the_band_is_refused(self) -> None:
+        """BANK NIFTY's level arriving under the NIFTY id is rejected, with a reason."""
+        from indbot.engine import Engine
+        # 54,392 is BANK NIFTY; NIFTY's band is 15,000-40,000.
+        err = Engine._price_band_error("NIFTY", {"ts": 0, "o": 0, "h": 0, "l": 0,
+                                                 "c": 54391.95, "v": 0})
+        self.assertTrue(err, "a BANK NIFTY level under the NIFTY id must be refused")
+        self.assertIn("54,391", err)
+        self.assertIn("different index", err)
+
+    def test_a_plausible_close_passes(self) -> None:
+        """The guard must not reject the index it is supposed to allow."""
+        from indbot.engine import Engine
+        for name, close in (("NIFTY", 22806.5), ("BANKNIFTY", 54391.95),
+                            ("FINNIFTY", 24443.2), ("MIDCPNIFTY", 13300.85),
+                            ("SENSEX", 73697.97)):
+            err = Engine._price_band_error(name, {"ts": 0, "o": 0, "h": 0, "l": 0,
+                                                  "c": close, "v": 0})
+            self.assertEqual("", err, f"{name} at {close} should pass: {err}")
+
+    def test_a_missing_or_zero_close_is_not_treated_as_wrong(self) -> None:
+        """No price is a data gap, not a wrong instrument — different failure."""
+        from indbot.engine import Engine
+        for candle in ({"c": 0}, {"c": None}, {}, {"c": "x"}):
+            self.assertEqual("", Engine._price_band_error("NIFTY", candle))

@@ -25,3 +25,7 @@ venv/
 cacert.pem
 *.pem
 *.crt
+
+# Access token stored by the dashboard (mode 0600). Never publish.
+indbot/data/token.txt
+indbot/data/token.txt.tmp

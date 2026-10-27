@@ -32,7 +32,7 @@ financial advice.
 The one thing worth knowing up front: with the default **₹1,000 per-trade loss
 limit** and a **30% stop**, a position is capped at ₹3,333 of premium. Against
 real lot sizes that means an at-the-money option will almost never pass the risk
-gate — NIFTY's lot of 75 allows ₹44 a unit against a typical ATM premium of
+gate — NIFTY's lot of 65 allows ₹51 a unit against a typical ATM premium of
 ₹150–200. That is deliberate, and the bot blocks the trade and shows you the
 arithmetic rather than quietly widening your stop or drifting to far-OTM strikes.
 

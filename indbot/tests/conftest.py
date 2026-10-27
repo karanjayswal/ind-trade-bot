@@ -74,7 +74,10 @@ ATM_STRIKE = 24450.0
 CHAIN_SPOT = 24471.7
 STRIKE_STEP = 50.0
 NIFTY_SCRIP = "40000001"
-NIFTY_CODE = "NSE_40000001"
+#: The INDEX segment prefix, not the exchange. `NSE_40000001` — what this fixture
+#: used to say — is rejected by the live API with `400 Invalid scrip codes`, so a
+#: fixture keyed that way asserted a bug instead of catching it.
+NIFTY_CODE = "NIDX_40000001"
 NIFTY_LOT = 75
 
 #: The 24450 CE / PE nodes verbatim from the docs' Option Chain example. Every other

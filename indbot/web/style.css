@@ -2021,3 +2021,34 @@ html, body { max-width: 100%; }
   .brand-name { font-size: 0.85rem; }
   .mode-btn { font-size: 0.62rem; letter-spacing: 0.04em; }
 }
+
+
+/* ---------------------------------------------- 29 access token card */
+
+.tokenform { display: grid; gap: 0.6rem; }
+.tokenform-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+/* Monospace so a pasted JWT is scannable, and never wider than its panel. */
+#token-input {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+}
+#token-input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+#token-status dd { overflow-wrap: anywhere; }
+#token-status dd.bad { color: var(--critical-ink); font-weight: 600; }
+.warn { color: var(--warning-ink); }
+.bad  { color: var(--critical-ink); }
+
+.banner--warn {
+  background: var(--warning-wash);
+  border-bottom: 1px solid var(--warning);
+  color: var(--ink);
+  font-family: var(--sans);
+  padding: 0.5rem var(--gutter);
+  font-size: 0.82rem;
+}
+
+/* The token panel earns the key-panel accent: an expired token stops everything. */
+#panel-token::before { background: linear-gradient(180deg, var(--warning) 0%, transparent 85%); }

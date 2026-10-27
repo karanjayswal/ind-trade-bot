@@ -89,6 +89,7 @@
   </ol>
 </div>
 
+<div class="banner banner--warn" id="token-banner" hidden></div>
 <div class="banner banner--stale" id="stale-banner" hidden></div>
 <div class="banner banner--halt" id="halt-banner" hidden></div>
 <div class="banner banner--error" id="error-banner" hidden></div>
@@ -398,6 +399,48 @@
   </section>
 
   <!-- DIAGNOSTICS -->
+  <!-- ACCESS TOKEN. INDmoney tokens expire at 07:00 IST, so this is a daily
+       chore and belongs in the UI rather than an env var and a restart. -->
+  <section class="panel panel--key" id="panel-token" aria-labelledby="h-token">
+    <div class="panel-head">
+      <h2 class="panel-title" id="h-token">Access token</h2>
+      <p class="panel-sub">Expires at 07:00 IST every day. Paste a fresh one here
+        instead of restarting the bot.</p>
+    </div>
+
+    <dl class="kv" id="token-status">
+      <dt>Status</dt><dd id="token-status-text">Waiting for the first snapshot.</dd>
+    </dl>
+
+    <form class="tokenform" id="token-form" autocomplete="off">
+      <div class="field">
+        <label for="token-input">New token</label>
+        <input type="password" id="token-input" name="token" spellcheck="false"
+               autocomplete="off" autocapitalize="off"
+               placeholder="Paste the token here (three dot-separated segments)"
+               aria-describedby="token-help">
+        <p class="field-hint" id="token-help">
+          Paste the token from the INDstocks dashboard, or run
+          <code>python3 run.py token</code> to mint one from your TOTP secret. It is
+          checked against your profile before anything is changed, stored in
+          <code>data/token.txt</code> with owner-only permissions, and never shown
+          back to you or sent to the browser.
+        </p>
+      </div>
+      <div class="tokenform-actions">
+        <button type="button" class="btn btn--ghost btn--sm" id="token-reveal"
+                aria-pressed="false">Show</button>
+        <button type="submit" class="btn btn--primary btn--sm" id="token-save">
+          Check &amp; save
+        </button>
+        <button type="button" class="btn btn--ghost btn--sm" id="token-clear">
+          Forget stored token
+        </button>
+      </div>
+      <p class="formmsg" id="token-msg" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
   <section class="panel" id="panel-diag" aria-labelledby="h-diag">
     <div class="panel-head">
       <h2 class="panel-title" id="h-diag">Diagnostics</h2>

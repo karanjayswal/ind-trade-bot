@@ -53,9 +53,9 @@ SOURCES: tuple[str, ...] = ("equity", "fno", "index", "mcx")
 #: only a floor under a total lookup failure — the CSV is always preferred, and every use
 #: of one of these is logged and recorded in ``Instruments.lot_size_source``.
 FALLBACK_LOTS: dict[str, int] = {
-    "NIFTY": 75,
-    "BANKNIFTY": 35,
-    "FINNIFTY": 65,
+    "NIFTY": 65,
+    "BANKNIFTY": 30,
+    "FINNIFTY": 60,
     "MIDCPNIFTY": 120,
     "SENSEX": 20,
 }
@@ -515,7 +515,6 @@ class Instruments:
             rows.append(tuple(cell.strip() for cell in raw))
 
         id_pos = col.get("SECURITY_ID", INDEX_COLUMN_POSITIONS["SECURITY_ID"])
-        sym_pos = col.get("SYMBOL_NAME")
         by_id: dict[str, int] = {}
         by_symbol: dict[str, list[int]] = {}
         index_by_name: dict[str, list[tuple[str, str]]] = {}
@@ -542,10 +541,15 @@ class Instruments:
                     entry = (exch.upper(), sid)
                     index_by_name.setdefault(_norm_label(row[name_pos]), []).append(entry)
                     index_by_squash.setdefault(_squash(row[name_pos]), []).append(entry)
-            elif sym_pos is not None and sym_pos < len(row):
-                symbol = _norm_label(row[sym_pos])
-                if symbol:
-                    by_symbol.setdefault(symbol, []).append(i)
+            else:
+                # SYMBOL_NAME is the documented column, but on the live F&O master it
+                # is EMPTY for every derivative row — the underlying's name is in
+                # UNDERLYING_SCRIP_NAME instead. Indexing on SYMBOL_NAME alone made
+                # every lot-size lookup miss and silently fall back to a hardcoded
+                # constant, which would mis-size every position. Index under both,
+                # plus the TRADING_SYMBOL prefix as a last resort.
+                for name in self._row_symbols(row, col):
+                    by_symbol.setdefault(name, []).append(i)
 
         if duplicate_ids:
             logger.debug("source=%s has %d duplicate SECURITY_ID rows; first row wins", source, duplicate_ids)
@@ -735,6 +739,29 @@ class Instruments:
 
         self.resolved_underlyings = resolved
         return resolved
+
+    @staticmethod
+    def _row_symbols(row: tuple[str, ...], col: dict[str, int]) -> list[str]:
+        """Every name this F&O row could be looked up by, normalised and deduped.
+
+        The live master leaves SYMBOL_NAME blank on derivative rows and puts the
+        underlying in UNDERLYING_SCRIP_NAME, so both are indexed. TRADING_SYMBOL's
+        prefix (`NIFTY-Nov2026-24450-CE` -> `NIFTY`) is the final fallback, because
+        a row with neither name column populated is still perfectly usable.
+        """
+        names: list[str] = []
+        for key in ("UNDERLYING_SCRIP_NAME", "SYMBOL_NAME"):
+            pos = col.get(key, SHARED_COLUMN_POSITIONS.get(key, -1))
+            if 0 <= pos < len(row):
+                value = _norm_label(row[pos])
+                if value and value not in names:
+                    names.append(value)
+        pos = col.get("TRADING_SYMBOL", SHARED_COLUMN_POSITIONS.get("TRADING_SYMBOL", -1))
+        if 0 <= pos < len(row) and row[pos]:
+            prefix = _norm_label(re.split(r"[-_ ]", row[pos], maxsplit=1)[0])
+            if prefix and prefix not in names:
+                names.append(prefix)
+        return names
 
     @staticmethod
     def _label_candidates(name: str, entry: dict[str, Any]) -> list[str]:

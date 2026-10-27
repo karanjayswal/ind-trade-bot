@@ -48,6 +48,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import clock
 from .config import ARM_PHRASE, Config
+from . import token_store
 from .errors import (
     ApiError,
     AuthError,
@@ -361,6 +362,21 @@ class ArmRequest(BaseModel):
         ...,
         min_length=1,
         description="The exact arming phrase. Passed straight to engine.arm().",
+    )
+
+
+class TokenRequest(BaseModel):
+    """`{"token": "eyJ..."}` — a pasted INDstocks access token.
+
+    Deliberately not length-capped beyond a sane floor: the token format is
+    INDmoney's to change, and the engine validates it against the broker anyway.
+    """
+
+    token: str = Field(
+        ...,
+        min_length=40,
+        description="The raw access token. Validated against GET /user/profile "
+                    "before anything is installed.",
     )
 
 
@@ -967,6 +983,28 @@ def create_app(
         engine.arm(body.confirm)
         return {"ok": True, "armed": bool(getattr(cfg, "armed", False)),
                 "mode": getattr(cfg, "mode", None)}
+
+    @app.post("/api/token", summary="Install a new access token")
+    def post_token(body: TokenRequest) -> dict[str, Any]:
+        """Validate a pasted token against the broker, then install it.
+
+        The token is never echoed back — only the masked description — so the
+        response can be logged or screenshotted safely. Validation happens before
+        anything is swapped, so a bad paste leaves a working session working.
+        """
+        return {"ok": True, "token": engine.set_token(body.token)}
+
+    @app.get("/api/token", summary="Masked token status")
+    def get_token() -> dict[str, Any]:
+        """Expiry, client id and a masked form. Never the token."""
+        return engine.token_info()
+
+    @app.delete("/api/token", summary="Forget the stored token")
+    def delete_token() -> dict[str, Any]:
+        """Removes the dashboard-stored token. $INDSTOCKS_ACCESS_TOKEN is untouched."""
+        removed = token_store.clear()
+        log.warning("stored access token cleared from the dashboard")
+        return {"ok": True, "removed": removed, "token": engine.token_info()}
 
     @app.post("/api/disarm", summary="Block live orders")
     def post_disarm() -> dict[str, Any]:

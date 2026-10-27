@@ -27,19 +27,22 @@ premium. Index options trade in lots, and one lot is a lot of units:
 
 | Index | Lot size | Max premium per unit that fits ₹1,000 | Typical ATM premium |
 |---|---:|---:|---:|
-| NIFTY | 75 | ₹44 | ₹150–200 |
-| BANKNIFTY | 35 | ₹95 | ₹250–350 |
-| FINNIFTY | 65 | ₹51 | ₹120–180 |
+| NIFTY | 65 | ₹51 | ₹150–200 |
+| BANKNIFTY | 30 | ₹111 | ₹250–350 |
+| FINNIFTY | 60 | ₹56 | ₹120–180 |
 | MIDCPNIFTY | 120 | ₹28 | ₹80–120 |
 | SENSEX | 20 | ₹167 | ₹200–300 |
+
+Lot sizes are read from the live F&O master at startup, not from this table —
+they change by exchange circular. These are the values verified on 27 Oct 2026.
 
 **An at-the-money option will therefore almost never pass the risk gate.** That
 is not a bug. The bot blocks the trade and tells you the arithmetic:
 
 ```
-1 lot of NIFTY 25000 CE (75 units) at ₹168 is ₹12,600; a 30% stop risks ₹3,780,
-over the ₹1,000 per-trade limit. Either raise the per-trade limit to ₹3,800 or
-let the bot buy a cheaper strike (max ₹44 premium at this lot size).
+1 lot of NIFTY 25000 CE (65 units) at ₹168 is ₹10,920; a 30% stop risks ₹3,276,
+over the ₹1,000 per-trade limit. Either raise the per-trade limit to ₹3,300 or
+let the bot buy a cheaper strike (max ₹51 premium at this lot size).
 ```
 
 You have three honest choices, and the UI shows you all three:

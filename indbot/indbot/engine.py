@@ -32,12 +32,12 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Iterator, Sequence
 
-from . import clock, indicators
+from . import clock, indicators, token_store
 from .api import INDstocksClient
 from .broker import BaseBroker, make_broker, make_remark
 from .chain import ChainPicker
 from .config import ARM_PHRASE, UNDERLYINGS, Config
-from .errors import ConfigError, DataError, IndbotError, OrderError
+from .errors import AuthError, ConfigError, DataError, IndbotError, OrderError
 from .instruments import Instruments
 from .journal import Journal
 from .learner import BucketVerdict, Learner
@@ -288,6 +288,90 @@ class Engine:
         except IndbotError as exc:
             log.error("no INDstocks client: %s", getattr(exc, "message", exc))
             return None
+
+    def set_token(self, raw: str, *, persist: bool = True) -> dict[str, Any]:
+        """Install a new access token, after proving it works. Returns its description.
+
+        The order matters and is the whole point: the token is validated against
+        GET /user/profile with a throwaway client BEFORE anything is replaced, so a
+        bad paste cannot take down a working session. Only once the broker has
+        answered is the token stored and the live wiring rebuilt.
+
+        Refuses outright while a live position is open. Swapping the credential
+        underneath an open trade would, if the new token were wrong, leave a
+        position on the exchange that this process can no longer exit.
+        """
+        token = token_store.validate_shape(raw)
+
+        with self._trade_lock:
+            open_now = self._open_positions()
+            if open_now and str(self.cfg.mode) == "live":
+                raise OrderError(
+                    f"refusing to change the access token with {len(open_now)} live "
+                    "position(s) open: if the new token were wrong, this process could "
+                    "no longer exit them. Close them first, or use panic().",
+                    payload={"open": [p.leg.label for p in open_now]},
+                )
+
+            # Prove it before trusting it.
+            probe = INDstocksClient(token=token)
+            try:
+                profile = probe.profile()
+            except IndbotError as exc:
+                probe.close()
+                raise AuthError(
+                    "that token did not work: "
+                    + str(getattr(exc, "message", exc))
+                    + ". Tokens expire at 07:00 IST and generating a new one invalidates "
+                    "the previous token, so make sure nothing else has minted one since.",
+                    masked=token_store.mask(token),
+                ) from exc
+
+            if persist:
+                token_store.save(token)
+
+            old = self._client
+            self._client = probe
+            self.instruments = Instruments(probe)
+            self.chain = ChainPicker(probe, self.instruments, self.cfg)
+            try:
+                self.broker = make_broker(
+                    self.cfg, probe, allow_closed_market=self._allow_closed_market
+                )
+            except IndbotError:
+                # A broker this mode cannot build is not a reason to lose a working
+                # client; the mode gate will report it separately.
+                log.exception("new token installed but the broker could not be rebuilt")
+            self._broker_mode = self.cfg.mode
+            self._account = profile
+            self._series.clear()           # refetch on the next tick with the new token
+            if old is not None and old is not probe:
+                with contextlib.suppress(Exception):
+                    old.close()
+
+        with self._lock:
+            # The startup "no access token" error is now stale — drop it, or the
+            # dashboard keeps showing a red banner about a problem just fixed.
+            self._errors = [e for e in self._errors if e.get("where") != "startup"]
+        log.warning(
+            "access token updated (%s) for client %s",
+            token_store.mask(token),
+            profile.get("user_id") or profile.get("ucc") or "?",
+        )
+        self._publish()
+        return self.token_info()
+
+    def token_info(self) -> dict[str, Any]:
+        """Masked token metadata for the UI. Never contains the token itself."""
+        raw, source = token_store.load()
+        info = token_store.describe(raw)
+        info["source"] = (
+            "environment ($INDSTOCKS_ACCESS_TOKEN)" if source == "env"
+            else "dashboard" if source == "file" else None
+        )
+        info["env_override"] = source == "env"
+        info["client_attached"] = self._client is not None
+        return info
 
     @property
     def poll_seconds(self) -> int:
@@ -991,6 +1075,16 @@ class Engine:
             if not candles:
                 series.error = f"no candles for {code} in {self.strategy.interval}"
                 log.warning("%s: %s", name, series.error)
+            elif (band_error := self._price_band_error(name, candles[-1])):
+                # A wrong instrument id usually still returns perfectly good candles
+                # — for the wrong index. That is the failure that cost four of five
+                # underlyings here, and it is invisible unless the level is checked.
+                # Refuse the data rather than trade a signal computed on NIFTY 100.
+                series.error = band_error
+                series.candles = []
+                log.error("%s: %s", name, band_error)
+                self._record_error(DataError(band_error, underlying=name, code=code),
+                                   where="candles")
             else:
                 series.candles = candles
                 series.last_ts = int(candles[-1].get("ts", 0) or 0)
@@ -998,6 +1092,34 @@ class Engine:
             series.fetched_ts = clock.epoch_s(now_dt)
             series.fetches += 1
             self._schedule_fetch(series, now_dt)
+
+    @staticmethod
+    def _price_band_error(name: str, candle: Candle) -> str:
+        """Non-empty when `candle` cannot plausibly belong to `name`.
+
+        Guards the one failure the API cannot report: a valid security id for the
+        wrong instrument. Every underlying carries a `price_band` in UNDERLYINGS;
+        a close outside it means the id is pointing somewhere else.
+        """
+        meta = UNDERLYINGS.get(name) or {}
+        band = meta.get("price_band")
+        if not band:
+            return ""
+        try:
+            close = float(candle.get("c") or 0.0)
+        except (TypeError, ValueError):
+            return ""
+        if close <= 0:
+            return ""
+        low, high = float(band[0]), float(band[1])
+        if low <= close <= high:
+            return ""
+        return (
+            f"{name} came back at {close:,.2f}, outside its expected {low:,.0f}-{high:,.0f} "
+            f"band. That almost always means the security id points at a different index "
+            f"— refusing the data rather than trading a signal computed on the wrong one. "
+            f"Run `python3 probe.py codes` and check the id against the index master."
+        )
 
     def _schedule_fetch(self, series: _Series, now_dt: datetime) -> None:
         """Set the next fetch to just after the next candle should close.
@@ -1019,11 +1141,12 @@ class Engine:
             )
 
     def _scrip_code(self, name: str) -> str:
-        """`NSE_40000001` — the underlying's quote/history code.
+        """`NIDX_40000001` — the underlying's history code for the REST surface.
 
-        The security id comes from the chain picker, which resolves it from the live
-        index master and only falls back to the hardcoded constant; everything but
-        NIFTY's constant is a guess.
+        The prefix is the INDEX segment (`NIDX` on NSE, `BIDX` on BSE), NOT the
+        exchange. `NSE_40000001` is what this used to build and it returns
+        `400 Invalid scrip codes`: the scrip-code surface wants the segment the
+        instrument lives in, and an index does not live in the equity segment.
         """
         if self.chain is None:
             raise DataError("no API client, so no instrument can be resolved", underlying=name)
@@ -1034,7 +1157,8 @@ class Engine:
                 f"({', '.join(sorted(UNDERLYINGS))})",
                 underlying=name,
             )
-        return f"{meta['exchange']}_{self.chain.underlying_scrip(name)}"
+        segment = str(meta.get("hist_segment") or ("BIDX" if meta["exchange"] == "BSE" else "NIDX"))
+        return f"{segment}_{self.chain.underlying_scrip(name)}"
 
     def _history_window(self, now_dt: datetime) -> tuple[datetime, datetime]:
         """The [start, end] window to request, wide enough to warm up every indicator.
@@ -1887,6 +2011,9 @@ class Engine:
                 "exiting": exit_window > 0,
             },
             "account": account,
+            # Masked only — token_store.describe() never returns the token, so this
+            # is safe to broadcast over the websocket and render in the browser.
+            "token": _safe("token", self.token_info, {"present": False}),
             "arm_phrase": ARM_PHRASE,
             "limits": _safe(
                 "limits", lambda: self.cfg.describe_risk(self._lot_sizes), []
