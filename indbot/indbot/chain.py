@@ -203,6 +203,9 @@ class ChainPicker:
         self._expiry_cache: dict[tuple[str, str], str] = {}
         self._scrip_cache: dict[str, str] = {}
         self._chain_cache: dict[tuple[str, str, int], tuple[float, float, list[OptionLeg]]] = {}
+        #: Legs dropped in the current fetch for want of a security_id. Reset per fetch;
+        #: reported in the error so "no tradable legs" names its own cause.
+        self._missing_ids = 0
 
     # ---------------------------------------------------------------- metadata
 
@@ -388,6 +391,9 @@ class ChainPicker:
         exchange = str(meta.get("exchange") or "NSE")
 
         legs: list[OptionLeg] = []
+        # Per-fetch, not per-instance: a count carried over from a previous chain would
+        # put the wrong number in the error message.
+        self._missing_ids = 0
         for strike, strike_key in self._sorted_strikes(strikes, underlying):
             node = strikes.get(strike_key)
             if not isinstance(node, dict):
@@ -407,10 +413,21 @@ class ChainPicker:
                     legs.append(leg)
 
         if not legs:
+            # Say WHY. "no usable legs" sent the reader hunting through logs; the
+            # overwhelmingly common cause is the BSE chain omitting security_id, and
+            # the remedy ("the F&O master could not supply them either") is different
+            # from a genuinely empty chain.
+            detail = (
+                f"all {self._missing_ids} had no security_id, in the chain or the F&O "
+                f"master, so none could be sent to POST /order"
+                if self._missing_ids else
+                "the strikes carried neither a ce nor a pe node"
+            )
             raise DataError(
                 f"option chain for {underlying} {chain_expiry} held {len(strikes)} strikes "
-                "but no usable legs",
+                f"but produced no tradable legs: {detail}",
                 underlying=underlying, expiry=chain_expiry,
+                missing_security_ids=self._missing_ids,
             )
 
         log.debug("%s %s: %d legs across %d strikes, spot %.2f, lot %d",
@@ -447,9 +464,30 @@ class ChainPicker:
     ) -> OptionLeg | None:
         """One `ce`/`pe` node as an OptionLeg, or None when it cannot be ordered."""
         security_id = str(payload.get("security_id") or "").strip()
+        trading_symbol = str(payload.get("trading_symbol") or "").strip()
+
         if not security_id:
-            # Without a security_id there is nothing to send to POST /order.
-            log.warning("%s %s %s %s has no security_id — skipped",
+            # The BSE chain returns an EMPTY security_id and trading_symbol on every
+            # leg, while NSE populates both. Dropping them made the whole SENSEX chain
+            # look unusable. The identifiers are in the F&O master (it carries BSE
+            # rows), so resolve them there before giving up.
+            resolved = None
+            try:
+                resolved = self.instruments.option_contract(underlying, expiry, strike, side)
+            except IndbotError as exc:
+                log.debug("could not resolve %s %s %s %s from the master: %s",
+                          underlying, expiry, strike, side, exc)
+            if resolved:
+                security_id = str(resolved.get("security_id") or "").strip()
+                trading_symbol = trading_symbol or str(resolved.get("trading_symbol") or "")
+                log.debug("%s %s %s %s: security_id %s resolved from the F&O master",
+                          underlying, expiry, strike, side, security_id)
+
+        if not security_id:
+            # Still nothing to put in POST /order, so the leg genuinely cannot be
+            # traded. Counted by the caller so the error can say how many and why.
+            self._missing_ids += 1
+            log.warning("%s %s %s %s has no security_id in the chain or the master — skipped",
                         underlying, expiry, strike, side)
             return None
 
@@ -464,7 +502,7 @@ class ChainPicker:
             strike=strike,
             side=side,
             security_id=security_id,
-            trading_symbol=str(payload.get("trading_symbol") or "").strip(),
+            trading_symbol=trading_symbol,
             lot_size=lot_size,
             exchange=exchange,
             ltp=max(0.0, _as_float(payload.get("last_price"))),

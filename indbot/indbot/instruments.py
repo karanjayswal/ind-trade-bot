@@ -135,7 +135,59 @@ _EXPIRY_FORMATS: tuple[str, ...] = (
     "%d-%b-%Y",
     "%d %b %Y",
     "%b %d %Y",
+    # The live master writes EXPIRY_DATE US-style: "10/29/2026 14:00" is 29 October,
+    # and "12/03/2026" pairs with TRADING_SYMBOL "SENSEX-03Dec2026-...". Tried LAST so
+    # a genuinely day-first master still parses day-first; it only catches the cases
+    # %d/%m/%Y rejects, i.e. where the first field is above 12. Slash dates where both
+    # fields are 12 or less stay ambiguous, which is why `_expiry_from_symbol` below
+    # is preferred for F&O rows — the symbol spells the month out.
+    "%m/%d/%Y",
 )
+
+#: `SENSEX-29Oct2026-77700-CE` / `NIFTY-Nov2026-FUT` — the day-month-year inside a
+#: trading symbol. Only the three-letter month makes this unambiguous, which is why it
+#: outranks EXPIRY_DATE wherever both are available.
+_SYMBOL_EXPIRY_RE = re.compile(r"[-_]?(\d{1,2})([A-Za-z]{3})(\d{4})(?=[-_]|$)")
+
+
+def _parse_master_expiry(value: Any, symbol: Any = "") -> date | None:
+    """EXPIRY_DATE from a scrip master, resolved without the day/month ambiguity.
+
+    The live NSE/BSE master writes slash dates **US-style** — verified by pairing
+    `12/03/2026` with `SENSEX-03Dec2026-75400-CE` — so month-first is tried first
+    here, the opposite of the generic `_parse_expiry`. The trading symbol still wins
+    when it carries a day, because a spelled month cannot be misread at all.
+
+    Without this, `12/03/2026` reads as 12 March and the contract is never found:
+    the whole chain then looks empty for an expiry that is perfectly tradable.
+    """
+    from_symbol = _expiry_from_symbol(symbol)
+    if from_symbol is not None:
+        return from_symbol
+    text = str(value or "").strip().split()[0] if str(value or "").strip() else ""
+    if "/" in text:
+        for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(text, fmt).date()
+            except ValueError:
+                continue
+    return _parse_expiry(value)
+
+
+def _expiry_from_symbol(symbol: Any) -> date | None:
+    """The expiry encoded in a TRADING_SYMBOL, or None when it carries no day.
+
+    Monthly contracts are written without a day (`NIFTY-Nov2026-FUT`); those return
+    None so the caller falls back to EXPIRY_DATE.
+    """
+    match = _SYMBOL_EXPIRY_RE.search(str(symbol or ""))
+    if not match:
+        return None
+    day, mon, year = match.groups()
+    try:
+        return datetime.strptime(f"{int(day):02d}{mon.title()}{year}", "%d%b%Y").date()
+    except ValueError:
+        return None
 
 
 def _norm_label(value: Any) -> str:
@@ -973,6 +1025,63 @@ class Instruments:
             pos = table.by_id.get(sid)
             if pos is not None:
                 return name, table, table.rows[pos]
+        return None
+
+    def option_contract(
+        self, underlying: str, expiry: str, strike: float, side: str
+    ) -> dict[str, Any] | None:
+        """Find one option contract in the F&O master. None when it is not listed.
+
+        Exists because the **BSE option chain returns an empty `security_id` and
+        `trading_symbol` on every leg** while NSE populates both. Without a
+        security_id there is nothing to send to POST /order, so every SENSEX leg was
+        being discarded and the chain looked empty. The identifiers are in the F&O
+        master (it carries ~5,000 BSE rows), so they are resolved from there instead.
+
+        Matched on underlying, expiry date, strike and option type. Strike is compared
+        with a small tolerance because the master writes `73600.00000` and the chain
+        keys on `73600`.
+        """
+        want_expiry = _parse_expiry(expiry)
+        if want_expiry is None:
+            return None
+        want_side = str(side or "").strip().upper()
+        try:
+            strike_f = float(strike)
+        except (TypeError, ValueError):
+            return None
+
+        table = self._ensure("fno")
+        for idx in table.by_symbol.get(_norm_label(underlying), []):
+            row = table.rows[idx]
+            if table.cell(row, "OPTION_TYPE").strip().upper() != want_side:
+                continue
+            row_expiry = _parse_master_expiry(
+                table.cell(row, "EXPIRY_DATE"), table.cell(row, "TRADING_SYMBOL")
+            )
+            if row_expiry != want_expiry:
+                continue
+            try:
+                if abs(float(table.cell(row, "STRIKE_PRICE") or 0) - strike_f) > 0.51:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            security_id = table.cell(row, "SECURITY_ID").strip()
+            if not security_id:
+                continue
+            return {
+                "security_id": security_id,
+                "trading_symbol": table.cell(row, "TRADING_SYMBOL").strip(),
+                "lot_size": _as_int(table.cell(row, "LOT_UNITS")),
+                # Reuse tick_size() rather than re-deriving it: it already resolves
+                # the paise-vs-rupees ambiguity, and two copies would drift.
+                "tick_size": self.tick_size(security_id, source="fno"),
+                "exchange": table.cell(row, "EXCH").strip().upper(),
+                "expiry": want_expiry.isoformat(),
+                "strike": strike_f,
+                "side": want_side,
+                "source": "fno master",
+            }
         return None
 
     def tick_size(self, security_id: str, *, source: str | None = None) -> float:

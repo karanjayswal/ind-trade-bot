@@ -951,3 +951,45 @@ class TestWrongInstrumentGuard(unittest.TestCase):
         from indbot.engine import Engine
         for candle in ({"c": 0}, {"c": None}, {}, {"c": "x"}):
             self.assertEqual("", Engine._price_band_error("NIFTY", candle))
+
+
+class TestBseChainMissingSecurityIds(unittest.TestCase):
+    """The BSE option chain omits security_id; the F&O master must supply it.
+
+    Live behaviour on 27 Oct 2026: every SENSEX leg came back with
+    `security_id: ""` and `trading_symbol: ""`, while NIFTY populated both. The
+    chain builder dropped all 42 legs and reported "no usable legs", which named
+    neither the cause nor the remedy. The ids exist in the F&O master (~5,000 BSE
+    rows), so they are resolved from there.
+    """
+
+    def test_master_expiry_parses_us_slash_dates(self) -> None:
+        """`10/29/2026` is 29 October in this master, not an invalid 29th month."""
+        from indbot.instruments import _parse_master_expiry
+        self.assertEqual("2026-10-29", _parse_master_expiry("10/29/2026 14:00").isoformat())
+
+    def test_the_trading_symbol_breaks_the_day_month_tie(self) -> None:
+        """`12/03/2026` is ambiguous; `SENSEX-03Dec2026-…` is not, and wins."""
+        from indbot.instruments import _parse_master_expiry
+        self.assertEqual(
+            "2026-12-03",
+            _parse_master_expiry("12/03/2026 14:00", "SENSEX-03Dec2026-75400-CE").isoformat(),
+        )
+        # With no day in the symbol the master's own US convention still applies.
+        self.assertEqual("2026-12-03", _parse_master_expiry("12/03/2026 14:00", "").isoformat())
+
+    def test_symbol_without_a_day_yields_none(self) -> None:
+        """Monthly symbols carry no day, so the caller must fall back."""
+        from indbot.instruments import _expiry_from_symbol
+        self.assertIsNone(_expiry_from_symbol("NIFTY-Oct2026-22750-CE"))
+        self.assertEqual("2026-10-29",
+                         _expiry_from_symbol("SENSEX-29Oct2026-77700-PE").isoformat())
+
+    def test_no_tradable_legs_error_names_its_cause(self) -> None:
+        """The message must say security_id, not just "no usable legs"."""
+        import inspect
+
+        from indbot import chain as chain_mod
+        src = inspect.getsource(chain_mod)
+        self.assertIn("missing_security_ids", src)
+        self.assertNotIn('"but no usable legs"', src)
