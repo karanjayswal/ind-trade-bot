@@ -708,7 +708,9 @@ const BLOCK_KINDS = [
   { key: 'limits', label: "today's trade or loss limits",
     test: /halted|trades today|per-trade limit reached|daily loss/i, real: true },
   { key: 'score', label: 'the minimum confluence score',
-    test: /score .*(below|under)|min_score/i, real: true },
+    // "scored 0.10, under the 0.55 minimum" — the earlier /score .*(below|under)/
+    // missed it, because "scored" has no space after "score".
+    test: /scored? [\d.]+.*(below|under)|under the [\d.]+ minimum|min_score/i, real: true },
   { key: 'learner', label: "the learner's gate",
     test: /blocked:|expectancy/i, real: true },
 ];
@@ -733,9 +735,20 @@ function renderWhy(s) {
   // hard-coded "the per-trade budget is why", which read as authoritative while
   // being wrong: the budget was fourth, and the largest group was not a refusal
   // at all but the bot picking the best signal in a candle.
+  //
+  // The tally covers THIS session only. The journal outlives the process, so a
+  // bug fixed an hour ago keeps appearing in it — four SENSEX chain failures went
+  // on being reported as a live problem after the cause was fixed. Rows from an
+  // earlier run stay visible in the feed, marked, but they do not feed a headline
+  // that is supposed to describe what is happening now.
+  const sessionStart = s.started_at ? Date.parse(s.started_at) / 1000 : 0;
+  const inSession = (r) => !sessionStart
+    || Number(r.recorded_ts || r.ts || 0) >= sessionStart - 1;
+
   const head = el('why-headline');
   if (head) {
-    const blocked = all.filter((r) => !r.taken);
+    const blocked = all.filter((r) => !r.taken && inSession(r));
+    const staleBlocked = all.filter((r) => !r.taken && !inSession(r));
     const tally = new Map();
     for (const r of blocked) {
       const kind = classifyBlock(r.block_reason);
@@ -748,12 +761,18 @@ function renderWhy(s) {
     const superseded = tally.get('superseded');
 
     if (!blocked.length) {
-      head.hidden = true;
-      head.textContent = '';
+      // Nothing blocked this run. Say so, and account for any older rows below
+      // rather than leaving the reader to wonder why the feed is not empty.
+      head.textContent = staleBlocked.length
+        ? 'Nothing has been blocked since the bot started. The '
+          + staleBlocked.length + ' entries below are from an earlier run — some may '
+          + 'name problems that have since been fixed.'
+        : 'Nothing has been blocked since the bot started.';
+      head.hidden = false;
     } else {
       const parts = [];
       if (refusals.length) {
-        parts.push('Of the last ' + all.length + ' signals: '
+        parts.push('Of ' + blocked.length + ' blocked since the bot started: '
           + refusals.map((x) => x.n + ' blocked by ' + x.kind.label).join(', ') + '.');
       }
       if (superseded) {
@@ -767,6 +786,10 @@ function renderWhy(s) {
           + inr((s.config || {}).max_trade_loss, { decimals: 0 })
           + ' per-trade limit allows — Settings shows the three ways to change that.');
       }
+      if (staleBlocked.length) {
+        parts.push('A further ' + staleBlocked.length + ' below are from an earlier run '
+          + 'and are not counted here.');
+      }
       head.textContent = parts.join(' ');
       head.hidden = false;
     }
@@ -779,10 +802,10 @@ function renderWhy(s) {
         + 'was taken or refused is written here as a sentence.'));
     return;
   }
-  fill(box, rows.slice(0, 40).map(signalRow));
+  fill(box, rows.slice(0, 40).map((r) => signalRow(r, inSession(r))));
 }
 
-function signalRow(r) {
+function signalRow(r, current) {
   const taken = !!r.taken;
   const reasons = parseReasons(r.reasons);
   const blocked = String(r.block_reason || '').trim();
@@ -805,6 +828,12 @@ function signalRow(r) {
         class: 'sigrow-verdict ' + (taken ? 'is-taken' : (superseded ? 'is-superseded' : 'is-blocked')),
         text: taken ? 'TAKEN' : (superseded ? 'SUPERSEDED' : 'NOT TAKEN'),
       }),
+      // A row from before this process started may describe a problem already
+      // fixed. Mark it, so old history cannot be read as a live fault.
+      current === false
+        ? h('span', { class: 'sigrow-stale', title: 'Recorded before the bot was last started',
+            text: 'earlier run' })
+        : null,
     ]),
     blocked ? h('p', { class: 'sigrow-block', text: blocked }) : null,
     reasons.length

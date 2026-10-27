@@ -2065,3 +2065,17 @@ html, body { max-width: 100%; }
 }
 .sigrow--superseded .sigrow-block { background: transparent; border-left-color: var(--muted); }
 .is-superseded { color: var(--muted); }
+
+/* A signal from before this process started. The cause may already be fixed, so
+   it is marked rather than silently mixed in with current ones. */
+.sigrow-stale {
+  font-family: var(--sans);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
