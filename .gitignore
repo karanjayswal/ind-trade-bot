@@ -20,3 +20,8 @@ venv/
 
 # macOS
 .DS_Store
+
+# Corporate CA bundle — contains an internal PKI root. Never publish.
+cacert.pem
+*.pem
+*.crt
