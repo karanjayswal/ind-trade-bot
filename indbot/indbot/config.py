@@ -127,11 +127,29 @@ DEFAULTS: dict[str, Any] = {
     # liquidity rejections on those two, drop them from this list and nothing else changes.
     "underlyings": ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"],
     # --- risk -------------------------------------------------------------------
+    # Deliberately left at the user's chosen 2,000. The high-conviction tier wants
+    # 2,500 a trade, which is more than this; rather than quietly raise someone's daily
+    # loss limit, `tier_for()` CLAMPS the per-trade cap to this number and says so.
+    # Raising it is the account owner's decision, not a side effect of a feature.
     "max_daily_loss": 2000.0,
     "max_trade_loss": 1000.0,
     "max_trades_per_day": 3,
     "max_open_positions": 1,
     "max_lots": 1,
+    # --- high-conviction tier ---------------------------------------------------
+    # A score at or above `high_conviction_score` may risk up to
+    # `high_conviction_max_trade_loss` instead of `max_trade_loss`, and in exchange
+    # is REQUIRED to carry a reward:risk of `high_conviction_rr` — the target is
+    # recomputed as stop x rr, never left at the ordinary 1:1.67.
+    #
+    # Read this before raising the cap: `score` is the strategy's own confluence
+    # number, not a calibrated probability. Until the learner has closed trades in a
+    # bucket it has never been tested against an outcome, so "high conviction" means
+    # "this setup ticked more boxes", not "this is more likely to win".
+    "high_conviction_enabled": True,
+    "high_conviction_score": 0.75,
+    "high_conviction_max_trade_loss": 2500.0,
+    "high_conviction_rr": 2.0,
     # --- strategy ---------------------------------------------------------------
     "min_score": 0.55,
     "stop_pct": 0.30,
@@ -224,6 +242,10 @@ _SPECS: dict[str, _Spec] = {
     "max_trades_per_day": _Spec("int", 1, 50),
     "max_open_positions": _Spec("int", 1, 10),
     "max_lots": _Spec("int", 1, 10, note="the bot is designed around 1"),
+    "high_conviction_enabled": _Spec("bool", note="let a high score risk more, at 1:2 R:R"),
+    "high_conviction_score": _Spec("float", 0.0, 1.0, note="score at or above which the raised cap applies"),
+    "high_conviction_max_trade_loss": _Spec("float", 100.0, 1_000_000.0, unit="rupees"),
+    "high_conviction_rr": _Spec("float", 1.0, 10.0, note="reward:risk required of a high-conviction trade"),
 
     "min_score": _Spec("float", 0.0, 1.0),
     "stop_pct": _Spec("float", 0.02, 0.90, unit=_PCT),
@@ -468,6 +490,10 @@ class Config:
     max_trades_per_day: int = 3
     max_open_positions: int = 1
     max_lots: int = 1
+    high_conviction_enabled: bool = True
+    high_conviction_score: float = 0.75
+    high_conviction_max_trade_loss: float = 2500.0
+    high_conviction_rr: float = 2.0
     # strategy
     min_score: float = 0.55
     stop_pct: float = 0.30
@@ -709,6 +735,67 @@ class Config:
         return out
 
     # -- risk arithmetic ---------------------------------------------------------
+
+    def tier_for(self, score: float, *, stop_pct: float | None = None) -> dict[str, Any]:
+        """Which risk tier a signal of this `score` trades under.
+
+        Returns `{tier, max_trade_loss, stop_pct, target_pct, rr, note}`.
+
+        A score at or above `high_conviction_score` may risk up to
+        `high_conviction_max_trade_loss`, and in exchange its target is REWRITTEN to
+        `stop_pct * high_conviction_rr` — taking more risk buys a wider target, not
+        the ordinary 1:1.67. That is the whole bargain; it is not optional, because a
+        bigger stake on the same payoff is strictly worse.
+
+        The per-trade figure is never allowed above `max_daily_loss`: a trade that
+        could breach the day cap on its own makes the day cap meaningless, and the
+        halt would fire only after the damage. Clamped here rather than at the gate so
+        every caller sees the same number.
+        """
+        base_stop = float(stop_pct if stop_pct is not None else self.stop_pct)
+        ordinary = {
+            "tier": "standard",
+            "max_trade_loss": float(self.max_trade_loss),
+            "stop_pct": base_stop,
+            "target_pct": float(self.target_pct),
+            "rr": (float(self.target_pct) / base_stop) if base_stop > 0 else 0.0,
+            "note": "",
+        }
+        if not self.high_conviction_enabled:
+            return ordinary
+        try:
+            if float(score) < float(self.high_conviction_score):
+                return ordinary
+        except (TypeError, ValueError):
+            return ordinary
+
+        cap = float(self.high_conviction_max_trade_loss)
+        standard = float(self.max_trade_loss)
+        # Clamp to the day limit, but NEVER below the standard cap. Without the outer
+        # max() a config with max_daily_loss under max_trade_loss made the
+        # high-conviction tier *more* restrictive than the ordinary one — a tier that
+        # punishes a better signal, which is plainly not what it is for.
+        clamped = max(standard, min(cap, float(self.max_daily_loss)))
+        rr = float(self.high_conviction_rr)
+        note = (
+            f"High conviction ({float(score):.2f} at or above "
+            f"{self.high_conviction_score:.2f}): risking up to {_inr(clamped)} instead of "
+            f"{_inr(self.max_trade_loss)}, at a required {rr:.0f}:1 reward-to-risk "
+            f"({base_stop:.0%} stop, {base_stop * rr:.0%} target)."
+        )
+        if clamped < cap:
+            note += (
+                f" Capped at the {_inr(self.max_daily_loss)} day limit — raise"
+                f" max_daily_loss to use the full {_inr(cap)}."
+            )
+        return {
+            "tier": "high_conviction",
+            "max_trade_loss": clamped,
+            "stop_pct": base_stop,
+            "target_pct": base_stop * rr,
+            "rr": rr,
+            "note": note,
+        }
 
     def effective_max_premium(self, lot_size: int) -> float:
         """The most one UNIT of premium may cost, in rupees. Never a per-lot figure.

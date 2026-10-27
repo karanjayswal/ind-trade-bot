@@ -193,8 +193,13 @@ class TestOrbDayBlockedByRiskArithmetic(IndbotTestCase):
         verdict = gate.check_entry(sig, leg, open_positions=[], mode="paper")
 
         self.assertFalse(verdict.ok)
-        self.assertEqual("per_trade_risk", verdict.blocking_rule)
+        # Assert the per-trade rule is AMONG the failures, not that it is the first.
+        # This lot risks more than the day limit as well, so which label lands in
+        # `blocking_rule` depends on rule order — and the gate reports every failure
+        # precisely so the reader is not at the mercy of that ordering.
         blocked = " ".join(verdict.reasons)
+        self.assertIn("6. per_trade_risk: BLOCK", verdict.checked)
+        self.assertRegex(blocked, r"per-trade|a lot|risks ₹|allowed to cost")
         self.assertIn("12,592", blocked)
         self.assertIn("per-trade limit", blocked)
         self.assertIn("cheaper strike", blocked,
@@ -291,11 +296,24 @@ class TestPaperTradeLifecycle(IndbotTestCase):
         return (self.position.entry_price - self.position.stop_price) / self.position.entry_price
 
     def test_stop_and_target_are_set_from_the_signal(self) -> None:
-        """Stop below entry, target above, both derived from the fill price."""
-        self.assertEqual(105.0, self.position.stop_price)   # 150.00 x (1 - 0.30)
-        self.assertEqual(225.0, self.position.target_price)  # 150.00 x (1 + 0.50)
+        """Stop below entry, target above, both derived from the fill price.
+
+        This fixture's breakout scores into the high-conviction tier, so the target
+        is the REQUIRED 2:1 of the stop (30% -> 60%), not the ordinary 50%. Taking a
+        bigger per-trade risk has to buy a bigger payoff; that is the whole bargain.
+        """
+        self.assertEqual(105.0, self.position.stop_price)    # 150.00 x (1 - 0.30)
+        self.assertEqual(240.0, self.position.target_price)  # 150.00 x (1 + 0.60)
         self.assertEqual(150.0, self.position.high_water)
         self.assertFalse(self.position.trail_armed)
+
+    def test_the_reward_to_risk_is_exactly_two_to_one(self) -> None:
+        """The ratio, stated as a ratio — the arithmetic above is easy to mis-copy."""
+        entry = self.position.entry_price
+        risk = entry - self.position.stop_price
+        reward = self.position.target_price - entry
+        self.assertGreater(risk, 0)
+        self.assertAlmostEqual(2.0, reward / risk, places=6)
 
     def test_trade_row_is_journalled_as_open(self) -> None:
         """The open is persisted before anything can go wrong with it."""
@@ -365,12 +383,13 @@ class TestPaperTradeLifecycle(IndbotTestCase):
     def test_exits_at_the_target_when_the_premium_gets_there(self) -> None:
         """A move straight to the target closes the trade as `target`.
 
-        The trail trigger (+25%) is passed on the way to the target (+50%), and
-        `check_exit_required` must still report the target rather than the trail,
-        because the premium is above the trailed stop, not below it.
+        The trail trigger (+25%) is passed on the way to the target (+60% in the
+        high-conviction tier), and `check_exit_required` must still report the target
+        rather than the trail, because the premium is above the trailed stop, not
+        below it.
         """
         fx.set_now("2026-10-26 09:40:00")
-        self.client.set_ltp(self.position.leg.security_id, 230.0)   # over the 225 target
+        self.client.set_ltp(self.position.leg.security_id, 245.0)   # over the 240 target
         result = self.engine.tick()
 
         self.assertEqual(1, len(result["exits"]))
@@ -993,3 +1012,31 @@ class TestBseChainMissingSecurityIds(unittest.TestCase):
         src = inspect.getsource(chain_mod)
         self.assertIn("missing_security_ids", src)
         self.assertNotIn('"but no usable legs"', src)
+
+
+class TestRunnerUpFallThrough(unittest.TestCase):
+    """A blocked best signal must not kill the candle.
+
+    On 27 Oct the 0.85 SENSEX signal died on a chain outage and the 0.75 NIFTY
+    runner-up was never attempted, because `_consider_entries` tried signals[0]
+    and recorded everything else as superseded. Being unable to trade the best
+    idea is not a reason to skip the second-best one.
+    """
+
+    def test_consider_entries_tries_every_signal_until_one_is_taken(self) -> None:
+        import inspect
+
+        from indbot import engine as engine_mod
+        src = inspect.getsource(engine_mod.Engine._consider_entries)
+        # It must loop, and it must stop once something is taken.
+        self.assertIn("for position, (sig, _verdict) in enumerate(signals)", src)
+        self.assertIn("if taken is not None", src)
+        self.assertNotIn("return self._try_entry(best_sig, now_dt)", src)
+
+    def test_the_superseded_reason_only_applies_after_a_trade_is_open(self) -> None:
+        """Runners-up are 'superseded' only once something was actually taken."""
+        import inspect
+
+        from indbot import engine as engine_mod
+        src = inspect.getsource(engine_mod.Engine._consider_entries)
+        self.assertIn("A trade was already opened from a higher-scoring signal", src)

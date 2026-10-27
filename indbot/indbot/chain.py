@@ -607,6 +607,7 @@ class ChainPicker:
         *,
         spot: float | None = None,
         stop_pct: float | None = None,
+        max_trade_loss: float | None = None,
         expiry: str | None = None,
         strike_count: int | None = None,
     ) -> tuple[OptionLeg | None, list[str]]:
@@ -663,7 +664,7 @@ class ChainPicker:
             log.warning("stop_pct was %r for %s; using 0.30 for the premium cap", stop_pct, underlying)
             stop = 0.30
 
-        cap_unit, cap_lot, cap_source = self._premium_cap(lot_size, stop)
+        cap_unit, cap_lot, cap_source = self._premium_cap(lot_size, stop, max_trade_loss)
 
         # --- filter 2: the per-trade premium budget (the binding constraint) ---
         affordable: list[OptionLeg] = []
@@ -796,7 +797,9 @@ class ChainPicker:
 
     # -------------------------------------------------------- risk arithmetic
 
-    def _premium_cap(self, lot_size: int, stop: float) -> tuple[float, float, str]:
+    def _premium_cap(self, lot_size: int, stop: float,
+                     max_trade_loss_override: float | None = None
+                     ) -> tuple[float, float, str]:
         """The per-unit and per-lot premium cap, and which rule set it.
 
         Two numbers are reconciled here and the TIGHTER wins, deliberately:
@@ -811,13 +814,28 @@ class ChainPicker:
         ``lot_size``. Taking the minimum means a misread unit can only ever make the
         budget tighter, never let a trade risk more than ``max_trade_loss``.
         """
-        max_trade_loss = _as_float(getattr(self.cfg, "max_trade_loss", 1000.0), 1000.0)
+        # The caller may raise the cap for a high-conviction signal; without one we
+        # fall back to the ordinary per-trade limit.
+        max_trade_loss = _as_float(
+            max_trade_loss_override if max_trade_loss_override is not None
+            else getattr(self.cfg, "max_trade_loss", 1000.0), 1000.0)
         denominator = stop * lot_size
         risk_cap = (max_trade_loss / denominator) if denominator > 0 else 0.0
 
+        # `effective_max_premium` is derived from the STANDARD per-trade limit, so
+        # when the caller has deliberately raised the cap for a high-conviction
+        # signal, folding it into the min() below would clamp the raise straight back
+        # down and the tier would do nothing. An explicit override therefore stands
+        # on its own; `max_premium_per_lot`, being an absolute ceiling the user set by
+        # hand, still applies either way.
+        override = max_trade_loss_override is not None
         cfg_cap = 0.0
         try:
-            cfg_cap = _as_float(self.cfg.effective_max_premium(lot_size), 0.0)
+            if override:
+                hard = _as_float(getattr(self.cfg, "max_premium_per_lot", 0.0), 0.0)
+                cfg_cap = (hard / float(lot_size)) if hard > 0 and lot_size > 0 else 0.0
+            else:
+                cfg_cap = _as_float(self.cfg.effective_max_premium(lot_size), 0.0)
         except AttributeError:
             log.warning("cfg has no effective_max_premium(); using the risk-derived cap")
         except IndbotError as exc:
@@ -837,7 +855,8 @@ class ChainPicker:
         # Only credit the config setting when it is strictly tighter: with
         # max_premium_per_lot = 0 it is derived from max_trade_loss and is the same
         # number, and naming the wrong rule would send the user to the wrong setting.
-        source = "config" if (0 < cfg_cap < risk_cap) else "risk"
+        source = ("tier" if override else
+                  "config" if (0 < cfg_cap < risk_cap) else "risk")
         return cap_unit, cap_unit * lot_size, source
 
     @staticmethod
@@ -934,8 +953,12 @@ class ChainPicker:
         lot_cost = cheapest.lot_cost
         risk = lot_cost * stop
         book = "" if two_sided else " (and even that one has a one-sided book)"
-        source = ("your premium-per-lot setting" if cap_source == "config"
-                  else f"your {_inr(max_trade_loss)} per-trade loss limit at {_a_pct(stop)} stop")
+        source = (
+            "your premium-per-lot setting" if cap_source == "config"
+            else f"the {_inr(max_trade_loss)} this high-conviction trade may risk "
+                 f"at {_a_pct(stop)} stop" if cap_source == "tier"
+            else f"your {_inr(max_trade_loss)} per-trade loss limit at {_a_pct(stop)} stop"
+        )
         return (
             f"No {underlying} {side} is cheap enough to trade. The cheapest of the "
             f"{len(candidates)} {'strike' if len(candidates) == 1 else 'strikes'} is the "

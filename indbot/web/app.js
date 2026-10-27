@@ -624,11 +624,17 @@ function renderPositions(s) {
 function positionCard(p) {
   const pnl = isNum(p.pnl) ? p.pnl : null;
   const stop = isNum(p.risk_stop) ? p.risk_stop : p.stop_price;
+  // Reward:risk, stated outright. It is the term of the high-conviction bargain,
+  // so it should not have to be inferred from two other rows.
+  const risk = isNum(p.entry_price) && isNum(stop) ? p.entry_price - stop : null;
+  const reward = isNum(p.target_price) && isNum(p.entry_price)
+    ? p.target_price - p.entry_price : null;
+  const rr = (isNum(risk) && risk > 0 && isNum(reward)) ? reward / risk : null;
   const rows = [
     ['Entry', inr(p.entry_price) + ' × ' + (p.qty || 0) + ' units'],
     ['Mark', p.mark_ok ? inr(p.ltp) : 'NO QUOTE'],
     ['Stop', inr(stop) + (p.trail_armed ? ' (trailing)' : '')],
-    ['Target', inr(p.target_price)],
+    ['Target', inr(p.target_price) + (isNum(rr) ? '  (' + rr.toFixed(1) + ':1)' : '')],
     ['At risk', inr(p.risk_at_stop, { decimals: 0 })],
     ['Opened', tsTime(p.entry_ts)],
   ];
@@ -1425,6 +1431,17 @@ const HELP = {
   max_trades_per_day: 'Entries per day. Exits are never counted and never blocked.',
   max_open_positions: 'How many positions may be open at once.',
   max_lots: 'Lots per entry. One lot is the minimum the exchange allows.',
+  high_conviction_enabled: 'Let a high-scoring signal risk more than the ordinary '
+    + 'per-trade limit, in exchange for a required reward-to-risk. Off means every trade '
+    + 'uses max_trade_loss.',
+  high_conviction_score: 'The score at or above which the raised cap applies. Note that '
+    + 'score is the strategy’s own confluence number, not a measured probability — until '
+    + 'the learner has closed trades in a bucket, a high score means "this setup ticked more '
+    + 'boxes", not "this is more likely to win".',
+  high_conviction_max_trade_loss: 'The most a high-conviction trade may lose. Capped at '
+    + 'max_daily_loss, and never less than max_trade_loss.',
+  high_conviction_rr: 'Reward-to-risk required of a high-conviction trade. At 2, a 30% stop '
+    + 'gets a 60% target — the bigger stake has to buy a bigger payoff, not the same one.',
   stop_pct: 'Stop distance as a fraction of the premium paid. 0.30 means a 30% fall exits.',
   target_pct: 'Target as a fraction of the premium. With a 30% stop, 0.50 needs a 37.5% win rate '
     + 'just to break even.',

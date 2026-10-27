@@ -413,7 +413,8 @@ class RiskGate:
         # Cap the new trade's risk at the per-trade limit: a trade that risks more than
         # that is rule 6's problem, and letting it also trip this rule would bury the
         # arithmetic the user actually needs to read behind a second, derived reason.
-        trade_risk = min(self._trade_risk(sig, leg), self._num("max_trade_loss", 1000.0))
+        trade_risk = min(self._trade_risk(sig, leg),
+                         float(self._tier(sig)["max_trade_loss"]))
         open_risk = self._open_risk(positions)
         projected = realized - trade_risk - open_risk
         if projected <= -limit:
@@ -429,6 +430,26 @@ class RiskGate:
                f"Risking {inr(trade_risk)} leaves the worst case for today at {inr(projected)}, "
                f"inside the {inr(limit)} limit.")
 
+    def _tier(self, sig: Signal) -> dict[str, Any]:
+        """The risk tier this signal trades under, from Config.tier_for().
+
+        Derived here rather than accepted as an argument: a caller that forgot to
+        pass it would silently get the standard cap, and a risk gate that can be
+        bypassed by omission is not a gate. Falls back to the standard limit when the
+        config predates the tier settings.
+        """
+        try:
+            return self.cfg.tier_for(sig.score, stop_pct=sig.stop_pct)
+        except (AttributeError, TypeError):
+            return {
+                "tier": "standard",
+                "max_trade_loss": self._num("max_trade_loss", 1000.0),
+                "stop_pct": float(getattr(sig, "stop_pct", 0.0) or 0.0),
+                "target_pct": float(getattr(sig, "target_pct", 0.0) or 0.0),
+                "rr": 0.0,
+                "note": "",
+            }
+
     # -- rules 6 and 7 -------------------------------------------------------------
     def _rule_6_7_sizing(self, record: Any, sig: Signal, leg: OptionLeg) -> None:
         """Rules 6 and 7 — per-trade rupee risk, and the stop that limit implies.
@@ -437,7 +458,8 @@ class RiskGate:
         refuses a lot whose stop would cost more than the limit; rule 7 refuses to
         "fix" rule 6 by using a stop so tight the spread alone would trigger it.
         """
-        max_trade_loss = self._num("max_trade_loss", 1000.0)
+        tier = self._tier(sig)
+        max_trade_loss = float(tier["max_trade_loss"])
         min_stop = self._num("min_stop_pct", 0.12)
         lot_size = int(getattr(leg, "lot_size", 0) or 0)
         ltp = float(getattr(leg, "ltp", 0.0) or 0.0)

@@ -1256,19 +1256,35 @@ class Engine:
         The runners-up are recorded with `taken=False` and the reason they lost, so
         the "why no trade" panel accounts for all of them, not just the winner.
         """
-        best_sig, _ = signals[0]
-        for sig, verdict in signals[1:]:
-            self._record(
-                sig,
-                taken=False,
-                reason=(
-                    f"A higher-scoring signal was evaluated first this candle: "
-                    f"{best_sig.underlying} {best_sig.setup} {best_sig.side} at "
-                    f"{best_sig.score:.2f} against this one's {sig.score:.2f}. The bot takes "
-                    f"one trade at a time."
-                ),
-            )
-        return self._try_entry(best_sig, now_dt)
+        # Try them best-first and STOP at the first one actually taken. The previous
+        # version tried only signals[0] and recorded the rest as superseded, so a top
+        # signal blocked by a chain outage or the premium budget killed the whole
+        # candle — on 27 Oct the 0.85 SENSEX signal died on a chain bug and the 0.75
+        # NIFTY runner-up was never attempted. Being unable to trade the best idea is
+        # not a reason to skip the second-best one.
+        taken: dict[str, Any] | None = None
+        for position, (sig, _verdict) in enumerate(signals):
+            if taken is not None:
+                self._record(
+                    sig,
+                    taken=False,
+                    reason=(
+                        f"A trade was already opened from a higher-scoring signal this "
+                        f"candle. The bot takes one trade at a time."
+                    ),
+                )
+                continue
+            result = self._try_entry(sig, now_dt)
+            if result is not None:
+                taken = result
+                if position:
+                    log.info(
+                        "took the #%d signal (%s %s %s at %.2f): every higher-scoring one "
+                        "this candle was blocked",
+                        position + 1, sig.underlying, sig.setup, sig.side, sig.score,
+                    )
+            # _try_entry has already journalled why this one was refused.
+        return taken
 
     def _try_entry(self, sig: Signal, now_dt: datetime) -> dict[str, Any] | None:
         """Pick a strike, run the risk gate, and buy one lot when everything says yes."""
@@ -1297,9 +1313,23 @@ class Engine:
             raise DataError(
                 "no API client, so no option chain can be read", underlying=sig.underlying
             )
+        # Which risk tier this score trades under. A high-conviction signal may risk
+        # more, and in exchange its target is rewritten to the required reward:risk —
+        # the bigger stake has to buy a bigger payoff, or it is simply a bigger bet on
+        # the same odds.
+        tier = self.cfg.tier_for(sig.score, stop_pct=sig.stop_pct)
+        if tier["tier"] != "standard" and tier["target_pct"] != sig.target_pct:
+            sig = Signal(
+                setup=sig.setup, side=sig.side, action=sig.action, underlying=sig.underlying,
+                ts=sig.ts, spot=sig.spot, score=sig.score,
+                reasons=list(sig.reasons) + [tier["note"]],
+                bucket=sig.bucket, stop_pct=tier["stop_pct"], target_pct=tier["target_pct"],
+            )
+
         try:
             leg, pick_reasons = self.chain.pick(
-                sig.underlying, sig.side, spot=sig.spot, stop_pct=sig.stop_pct
+                sig.underlying, sig.side, spot=sig.spot, stop_pct=sig.stop_pct,
+                max_trade_loss=tier["max_trade_loss"],
             )
         except IndbotError as exc:
             message = getattr(exc, "message", str(exc))

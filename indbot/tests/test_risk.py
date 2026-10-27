@@ -145,13 +145,17 @@ def _leg(
 
 def _signal(
     *,
-    score: float = 0.80,
+    # Below high_conviction_score (0.75) on purpose: these tests exercise the
+    # STANDARD risk tier. A default of 0.80 silently put every one of them in the
+    # high-conviction tier, which doubles the per-trade cap and made rule 6 stop
+    # firing. Tier behaviour is covered explicitly in TestHighConvictionTier.
+    score: float = 0.60,
     stop_pct: float = 0.30,
     target_pct: float = 0.50,
     bucket: str = BUCKET,
     ts: int | None = None,
 ) -> Signal:
-    """A BUY signal that clears min_score unless a test lowers it."""
+    """A BUY signal that clears min_score but stays in the standard tier."""
     return Signal(
         setup="orb",
         side="CE",
@@ -1111,3 +1115,71 @@ class TestConstruction:
         assert inr(None) == "₹?"
         assert pct(0.30) == "30%"
         assert pct(1_000 / 12_600) == "7.9%"
+
+
+class TestHighConvictionTier:
+    """A high score may risk more, but only at the required reward:risk.
+
+    Asked for directly: "If the confidence is high you can take the high risk
+    trades also. But in that case the risk reward ratio should be 1:2 then."
+    """
+
+    def test_below_the_threshold_nothing_changes(self) -> None:
+        cfg = Config()
+        t = cfg.tier_for(cfg.high_conviction_score - 0.01)
+        assert t["tier"] == "standard"
+        assert t["max_trade_loss"] == cfg.max_trade_loss
+        assert t["target_pct"] == cfg.target_pct
+
+    def test_at_the_threshold_the_tier_applies(self) -> None:
+        cfg = Config()
+        t = cfg.tier_for(cfg.high_conviction_score)
+        assert t["tier"] == "high_conviction"
+        assert t["max_trade_loss"] >= cfg.max_trade_loss
+
+    def test_the_reward_to_risk_is_exactly_the_configured_ratio(self) -> None:
+        """The target is REWRITTEN, not left at the ordinary 1:1.67."""
+        cfg = Config()
+        for stop in (0.20, 0.30, 0.375):
+            t = cfg.tier_for(0.90, stop_pct=stop)
+            assert t["stop_pct"] == stop
+            assert t["target_pct"] == pytest.approx(stop * cfg.high_conviction_rr)
+            assert t["rr"] == pytest.approx(cfg.high_conviction_rr)
+
+    def test_the_tier_is_never_tighter_than_standard(self) -> None:
+        """A day cap under the per-trade cap must not punish a better signal.
+
+        The first version clamped to max_daily_loss unconditionally, so a config
+        with a 2,000 day cap and a 4,000 per-trade cap gave high-conviction LESS
+        room than an ordinary trade.
+        """
+        cfg = Config().copy_with({"max_trade_loss": 4000.0, "max_daily_loss": 2000.0})
+        assert cfg.tier_for(0.90)["max_trade_loss"] >= cfg.max_trade_loss
+
+    def test_it_never_exceeds_the_day_limit_when_that_is_the_wider_bound(self) -> None:
+        cfg = Config().copy_with({"max_trade_loss": 1000.0, "max_daily_loss": 1500.0})
+        assert cfg.tier_for(0.90)["max_trade_loss"] <= max(cfg.max_daily_loss, cfg.max_trade_loss)
+
+    def test_disabling_it_restores_the_standard_tier(self) -> None:
+        cfg = Config().copy_with({"high_conviction_enabled": False})
+        assert cfg.tier_for(0.99)["tier"] == "standard"
+
+    def test_the_note_states_the_numbers(self) -> None:
+        """The UI prints this verbatim, so it has to read as a sentence."""
+        note = Config().tier_for(0.85, stop_pct=0.30)["note"]
+        assert "0.85" in note and "2:1" in note
+        assert "30%" in note and "60%" in note
+
+    def test_the_gate_uses_the_tier_not_the_standard_cap(self, journal: Journal) -> None:
+        """Rule 6 must size against the tier, or the raise does nothing."""
+        cfg = Config().copy_with({"max_daily_loss": 50_000.0})
+        gate = RiskGate(journal, cfg)
+        hc = cfg.tier_for(0.85)["max_trade_loss"]
+        # A lot whose stop risks more than standard but less than high-conviction.
+        risk_target = (cfg.max_trade_loss + hc) / 2
+        ltp = risk_target / (0.30 * 75)
+        leg = _leg(round(ltp, 2))
+        blocked_std = _blocked_rules(_entry(gate, leg=leg, sig=_signal(score=0.60)))
+        blocked_hc = _blocked_rules(_entry(gate, leg=leg, sig=_signal(score=0.85)))
+        assert RULE_PER_TRADE_RISK in blocked_std, "standard tier should refuse this lot"
+        assert RULE_PER_TRADE_RISK not in blocked_hc, "high-conviction tier should allow it"

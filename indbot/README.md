@@ -191,6 +191,35 @@ true and the safe branch is the exit.
 
 ---
 
+## Two risk tiers
+
+An ordinary signal risks up to `max_trade_loss` (₹1,000) at the configured 30/50
+stop and target — a reward:risk of about 1:1.67.
+
+A signal scoring at or above `high_conviction_score` (0.75) may risk up to
+`high_conviction_max_trade_loss` (₹2,500) instead, and **in exchange its target is
+rewritten to `high_conviction_rr` times the stop** — 2:1 by default, so a 30% stop
+gets a 60% target. Taking more risk has to buy a bigger payoff; a larger stake on
+the same odds is strictly worse, so the ratio is not optional.
+
+Two bounds always hold:
+
+- the tier cap is clamped to `max_daily_loss`, because a single trade that can
+  breach the day limit makes the day limit meaningless; and
+- it is never *below* `max_trade_loss`, so a better signal is never punished.
+
+With a ₹2,000 day limit the effective high-conviction cap is ₹2,000, not ₹2,500.
+Raising it is your decision — the bot will not quietly raise your daily loss limit
+to make its own feature work.
+
+**What "high conviction" does and does not mean.** `score` is the strategy's own
+confluence number: how many of its checks agreed. It is *not* a calibrated
+probability. Until the learner has closed trades in a bucket, that score has never
+been tested against an outcome, so a 0.85 means "this setup ticked more boxes than
+usual", not "this is 85% likely to win". The tier is a considered bet on the
+strategy's own ranking, and it should be judged by the journal after a few dozen
+trades, not trusted in advance.
+
 ## How it learns from its mistakes
 
 No machine learning. Transparent statistics you can audit and argue with.
