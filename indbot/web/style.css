@@ -2052,3 +2052,16 @@ html, body { max-width: 100%; }
 
 /* The token panel earns the key-panel accent: an expired token stops everything. */
 #panel-token::before { background: linear-gradient(180deg, var(--warning) 0%, transparent 85%); }
+
+
+/* ------------------------------- 30 superseded signals
+   Not refusals: a better signal fired in the same candle. Styled down so the
+   "why no trade" feed reads as what it is — mostly the bot choosing, not
+   mostly the bot blocking. */
+
+.sigrow--superseded {
+  border-left-color: var(--muted);
+  opacity: 0.72;
+}
+.sigrow--superseded .sigrow-block { background: transparent; border-left-color: var(--muted); }
+.is-superseded { color: var(--muted); }

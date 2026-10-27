@@ -691,6 +691,34 @@ function parseReasons(raw) {
   return [];
 }
 
+/* What actually stopped a signal, in the order the tests are applied.
+ * Ordered most-specific first: "could not read the chain" also mentions the
+ * underlying, so the chain test has to run before anything looser. */
+const BLOCK_KINDS = [
+  { key: 'superseded', label: 'another signal scored higher that candle',
+    test: /higher-scoring signal/i, real: false },
+  { key: 'chain', label: 'a chain read failure',
+    test: /could not read|option chain for|no tradable legs|security_id/i, real: true },
+  { key: 'budget', label: 'the per-trade risk budget',
+    test: /allowed to cost|a 30% stop risks|costs ₹|premium ₹|tighter than the/i, real: true },
+  { key: 'strike', label: 'the delta, spread or liquidity filters',
+    test: /delta|spread|open interest|\boi\b|volume/i, real: true },
+  { key: 'session', label: 'the entry window',
+    test: /market is closed|entries only|flat by|no_entry/i, real: true },
+  { key: 'limits', label: "today's trade or loss limits",
+    test: /halted|trades today|per-trade limit reached|daily loss/i, real: true },
+  { key: 'score', label: 'the minimum confluence score',
+    test: /score .*(below|under)|min_score/i, real: true },
+  { key: 'learner', label: "the learner's gate",
+    test: /blocked:|expectancy/i, real: true },
+];
+
+function classifyBlock(reason) {
+  const text = String(reason || '');
+  for (const kind of BLOCK_KINDS) if (kind.test.test(text)) return kind;
+  return { key: 'other', label: 'another reason', test: null, real: true };
+}
+
 function renderWhy(s) {
   const box = el('why-list');
   if (!box) return;
@@ -701,21 +729,46 @@ function renderWhy(s) {
     return true;
   });
 
-  // The per-trade premium budget is the rule that blocks most signals. Promote it
-  // to a headline, so a quiet bot does not read as a broken one.
+  // Report the actual mix rather than asserting a cause. An earlier version
+  // hard-coded "the per-trade budget is why", which read as authoritative while
+  // being wrong: the budget was fourth, and the largest group was not a refusal
+  // at all but the bot picking the best signal in a candle.
   const head = el('why-headline');
   if (head) {
-    const budget = all.filter((r) => !r.taken
-      && /per-trade|premium|a lot is|risks ₹/i.test(String(r.block_reason || '')));
-    if (budget.length >= 2) {
-      head.textContent = budget.length + ' of the last ' + all.length + ' signals were blocked by '
-        + 'the per-trade risk budget, not by the strategy. One lot of an at-the-money option costs '
-        + 'more than your ' + inr((s.config || {}).max_trade_loss, { decimals: 0 })
-        + ' per-trade limit allows. Settings shows the three ways to change that.';
-      head.hidden = false;
-    } else {
+    const blocked = all.filter((r) => !r.taken);
+    const tally = new Map();
+    for (const r of blocked) {
+      const kind = classifyBlock(r.block_reason);
+      const cur = tally.get(kind.key) || { kind, n: 0 };
+      cur.n += 1;
+      tally.set(kind.key, cur);
+    }
+    const ranked = Array.from(tally.values()).sort((a, b) => b.n - a.n);
+    const refusals = ranked.filter((x) => x.kind.real);
+    const superseded = tally.get('superseded');
+
+    if (!blocked.length) {
       head.hidden = true;
       head.textContent = '';
+    } else {
+      const parts = [];
+      if (refusals.length) {
+        parts.push('Of the last ' + all.length + ' signals: '
+          + refusals.map((x) => x.n + ' blocked by ' + x.kind.label).join(', ') + '.');
+      }
+      if (superseded) {
+        parts.push(superseded.n + ' were not refused at all — a higher-scoring signal '
+          + 'was taken for that candle instead, which is the bot choosing, not blocking.');
+      }
+      // Only make the budget argument when the data actually says so.
+      const top = refusals[0];
+      if (top && top.kind.key === 'budget' && top.n >= 2) {
+        parts.push('One lot of an at-the-money option costs more than your '
+          + inr((s.config || {}).max_trade_loss, { decimals: 0 })
+          + ' per-trade limit allows — Settings shows the three ways to change that.');
+      }
+      head.textContent = parts.join(' ');
+      head.hidden = false;
     }
   }
 
@@ -733,7 +786,14 @@ function signalRow(r) {
   const taken = !!r.taken;
   const reasons = parseReasons(r.reasons);
   const blocked = String(r.block_reason || '').trim();
-  return h('article', { class: 'sigrow ' + (taken ? 'sigrow--taken' : 'sigrow--rejected') }, [
+  // A signal passed over because a better one fired in the same candle was not
+  // refused, so it does not get the refusal styling or the "NOT TAKEN" label —
+  // calling it a rejection overstates how often the bot says no.
+  const kind = taken ? null : classifyBlock(blocked);
+  const superseded = !!kind && kind.key === 'superseded';
+  const cls = taken ? 'sigrow--taken'
+    : (superseded ? 'sigrow--superseded' : 'sigrow--rejected');
+  return h('article', { class: 'sigrow ' + cls }, [
     h('header', { class: 'sigrow-head' }, [
       h('span', { class: 'sigrow-side side--' + String(r.side || '').toLowerCase(),
         text: String(r.side || '') }),
@@ -741,8 +801,10 @@ function signalRow(r) {
         text: String(r.underlying || '') + ' · ' + String(r.setup || '') }),
       h('span', { class: 'sigrow-score', text: 'score ' + num(r.score, 2) }),
       h('span', { class: 'sigrow-time', text: tsTime(r.ts) }),
-      h('span', { class: 'sigrow-verdict ' + (taken ? 'is-taken' : 'is-blocked'),
-        text: taken ? 'TAKEN' : 'NOT TAKEN' }),
+      h('span', {
+        class: 'sigrow-verdict ' + (taken ? 'is-taken' : (superseded ? 'is-superseded' : 'is-blocked')),
+        text: taken ? 'TAKEN' : (superseded ? 'SUPERSEDED' : 'NOT TAKEN'),
+      }),
     ]),
     blocked ? h('p', { class: 'sigrow-block', text: blocked }) : null,
     reasons.length
